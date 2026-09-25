@@ -277,6 +277,7 @@ input, select { font-family: inherit; color: inherit; }
 .field-full { grid-column: 1 / -1; }
 .field label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .field input, .field select { padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; font-size: 14px; outline: none; transition: .2s; width: 100%; }
+.field .hint-sm { display: block; margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--muted); }
 .field input:focus, .field select:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(168,85,247,.18); }
 .readonly { padding: 12px 14px; background: var(--surface-solid); border: 1px dashed var(--border); border-radius: 11px; font-weight: 600; font-family: var(--font-head); }
 .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -409,6 +410,8 @@ tr.pager-tr > td { padding: 0; border: none; background: transparent; }
 .cust-card .cc-stats div { background: var(--surface-solid); border: 1px solid var(--border); border-radius: 10px; padding: 9px; }
 .cust-card .cc-stats span { font-size: 11px; color: var(--muted); display: block; }
 .cust-card .cc-stats strong { font-size: 15px; }
+.cc-add { margin-top: 12px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border-radius: 11px; font-family: var(--font-head); font-size: 13px; font-weight: 700; cursor: pointer; color: var(--purple); background: rgba(168,85,247,.12); border: 1px solid rgba(168,85,247,.32); transition: .2s; }
+.cc-add:hover { background: var(--purple); color: #fff; transform: translateY(-1px); }
 
 /* settings */
 .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }

@@ -607,6 +607,8 @@ function openTxModal(id) {
   recomputeFormTotals();
   fillMethodSelect($('#fDpMethod'), SETTINGS.defaultMethod);
   $('#initDpWrap').style.display = id ? 'none' : '';
+  const names = [...new Set(TRANSACTIONS.map(t => (t.customerName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  $('#custNames').innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
   openModal('#modalTx');
 }
 function saveTxFromForm() {
@@ -821,42 +823,48 @@ function renderKeep() {
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
   const q = ($('#keepSearch') && $('#keepSearch').value || '').toLowerCase();
   const f = ($('#keepStatusFilter') && $('#keepStatusFilter').value) || 'all';
-  const groups = [];
+  const map = new Map();
   TRANSACTIONS.forEach(t => {
     if (t.checkoutStatus) return; // sudah CO = barang dikirim, bukan keep lagi
-    if (q && !(String(t.customerName || '').toLowerCase().includes(q))) return;
-    const items = [];
+    const name = (String(t.customerName || '').trim()) || 'Tanpa Nama';
+    if (q && !name.toLowerCase().includes(q)) return;
     (t.items || []).forEach((i, idx) => {
       const st = i.status || 'keep';
-      if (f === 'all' ? st !== 'batal' : st === f) items.push({ i, idx });
+      const pass = f === 'all' ? st !== 'batal' : st === f;
+      if (!pass) return;
+      if (!map.has(name)) map.set(name, { name, items: [], txs: new Map(), k: 0, ba: 0, gTotal: 0 });
+      const g = map.get(name);
+      g.items.push({ i, idx, txId: t.id });
+      if (!g.txs.has(t.id)) g.txs.set(t.id, t);
+      if (st === 'batal') g.ba++; else { g.k++; g.gTotal += (i.price || 0); }
     });
-    if (!items.length) return;
-    const k = items.filter(x => x.i.status === 'keep').length;
-    const ba = items.filter(x => x.i.status === 'batal').length;
-    const gTotal = items.filter(x => x.i.status !== 'batal').reduce((sum, x) => sum + (x.i.price || 0), 0);
-    groups.push({ t, items, k, ba, gTotal });
   });
+  const groups = [...map.values()].sort((a, b) => b.gTotal - a.gTotal || a.name.localeCompare(b.name));
   const pg = slicePage(groups, 'keep');
-  $('#keepList').innerHTML = groups.length ? pg.items.map(g => `
+  $('#keepList').innerHTML = groups.length ? pg.items.map(g => {
+    const hangTxs = [...g.txs.values()].filter(t => txPaidTotal(t) > 0 && !t.hangus);
+    const multi = g.txs.size > 1;
+    return `
     <div class="keep-group">
       <div class="kg-head">
-        <div class="avatar" style="background:${avatarColor(g.t.customerName)}">${esc(initials(g.t.customerName))}</div>
-        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${g.k} keep${g.ba ? ' · ' + g.ba + ' batal' : ''} · ${fmtDate(g.t.date)}${g.t.hangus ? ' · ⚠️ hangus' : ''}</span></div>
-        ${(txPaidTotal(g.t) > 0 && !g.t.hangus) ? `<button class="kg-hangus" data-act="hangus" data-id="${g.t.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk"><i class="fa-solid fa-fire"></i> DP Hangus</button>` : ''}
+        <div class="avatar" style="background:${avatarColor(g.name)}">${esc(initials(g.name))}</div>
+        <div class="kg-name"><strong>${esc(g.name)}</strong><span>${g.k} keep${g.ba ? ' · ' + g.ba + ' batal' : ''}${multi ? ' · ' + g.txs.size + ' sesi' : ''}</span></div>
+        ${hangTxs.map(tt => `<button class="kg-hangus" data-act="hangus" data-id="${tt.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk">${multi ? fmtDate(tt.date) + ' · ' : ''}<i class="fa-solid fa-fire"></i> DP Hangus</button>`).join('')}
         <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
       </div>
       <div class="kg-items">
-        ${g.items.map(({ i, idx }) => `
-        <div class="kg-item${i.status === 'batal' ? ' is-batal' : ''}">
-          <span class="ki-no">${idx + 1}.</span>
-          <span class="ki-price">${fmtRp(i.price)}</span>
+        ${g.items.map((it, n) => `
+        <div class="kg-item${it.i.status === 'batal' ? ' is-batal' : ''}">
+          <span class="ki-no">${n + 1}.</span>
+          <span class="ki-price">${fmtRp(it.i.price)}</span>
           <div class="seg seg-mini">
-            <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${g.t.id}" data-idx="${idx}" title="Tetap keep"><i class="fa-solid fa-bookmark"></i></button>
-            <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${g.t.id}" data-idx="${idx}" title="Batalkan barang"><i class="fa-solid fa-xmark"></i></button>
+            <button class="${it.i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${it.txId}" data-idx="${it.idx}" title="Tetap keep"><i class="fa-solid fa-bookmark"></i></button>
+            <button class="${it.i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${it.txId}" data-idx="${it.idx}" title="Batalkan barang"><i class="fa-solid fa-xmark"></i></button>
           </div>
         </div>`).join('')}
       </div>
-    </div>`).join('') + pagerHTML('keep', pg.page, pg.pages, pg.total) : emptyState(TRANSACTIONS.length ? 'Tidak ada hasil' : 'Belum ada barang di-keep', (q || f !== 'all') ? 'Coba ubah pencarian / filter status.' : 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
+    </div>`;
+  }).join('') + pagerHTML('keep', pg.page, pg.pages, pg.total) : emptyState(TRANSACTIONS.length ? 'Tidak ada hasil' : 'Belum ada barang di-keep', (q || f !== 'all') ? 'Coba ubah pencarian / filter status.' : 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
 }
 function setItemStatus(txId, idx, status) {
   const t = getTx(txId); if (!t || !t.items[idx]) return;
@@ -955,6 +963,7 @@ function renderCustomers() {
         <div><span>Total Belanja</span><strong>${fmtRp(c.value)}</strong></div>
         <div><span>Checkout</span><strong>${c.co}/${c.orders}</strong></div>
       </div>
+      <button class="cc-add" data-action="add-for-customer" data-name="${esc(c.name)}" title="Tambah order baru untuk customer ini"><i class="fa-solid fa-plus"></i> Order Lagi</button>
     </div>`).join('') + pagerHTML('cust', pg.page, pg.pages, pg.total) : emptyState('Belum ada customer', 'Data customer muncul otomatis dari transaksi.', 'add-tx');
 }
 
@@ -1213,6 +1222,7 @@ function handleAction(action, el) {
   const id = el.dataset.id || null;
   switch (action) {
     case 'add-tx': openTxModal(); break;
+        case 'add-for-customer': openTxModal(); $('#fName').value = el.dataset.name || ''; break;
     case 'add-keep': openTxModal(); break;
     case 'add-dp': openDpModal(id); break;
     case 'goto-checkout': go('checkout'); break;

@@ -313,7 +313,7 @@
       <div class="modal-body">
         <form id="txForm" class="form-grid">
           <input type="hidden" id="txId" />
-          <div class="field"><label>Nama Customer / TikTok *</label><input id="fName" placeholder="Siti / @siti_shop" /></div>
+          <div class="field"><label>Nama Customer *</label><input id="fName" list="custNames" autocomplete="on" placeholder="Ketik / pilih nama customer" /><datalist id="custNames"></datalist><span class="hint-sm">Pilih nama yang sudah ada supaya data customer nyambung — order baru tetap terpisah, tidak dobel dengan yang kemarin.</span></div>
           <div class="field field-full"><label>Tanggal Transaksi</label><input type="date" id="fDate" /></div>
 
           <div class="field field-full">
