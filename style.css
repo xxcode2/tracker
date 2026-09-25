@@ -406,10 +406,23 @@ tr.pager-tr > td { padding: 0; border: none; background: transparent; }
 .cust-card .avatar { width: 58px; height: 58px; font-size: 22px; margin: 0 auto 10px; }
 .cust-card strong { font-size: 16px; font-family: var(--font-head); }
 .cust-card .cc-tt { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
-.cust-card .cc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.cust-card .cc-stats div { background: var(--surface-solid); border: 1px solid var(--border); border-radius: 10px; padding: 9px; }
-.cust-card .cc-stats span { font-size: 11px; color: var(--muted); display: block; }
-.cust-card .cc-stats strong { font-size: 15px; }
+.cc-top { cursor: pointer; }
+.cc-top:hover strong { color: var(--purple); }
+.cc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cc-stats div { background: var(--surface-solid); border: 1px solid var(--border); border-radius: 10px; padding: 9px; }
+.cc-stats span { font-size: 11px; color: var(--muted); display: block; }
+.cc-stats strong { font-size: 15px; }
+/* customer history timeline (inside detail modal) */
+.hist-list { display: flex; flex-direction: column; }
+.hist-item { display: flex; align-items: center; gap: 12px; padding: 12px 6px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+.hist-item:last-child { border-bottom: none; }
+.hist-item:hover { background: var(--surface-solid); }
+.hist-item .hi-date { flex: none; width: 84px; font-size: 12px; font-weight: 700; color: var(--muted); font-family: var(--font-head); }
+.hist-item .hi-body { flex: 1; min-width: 0; }
+.hist-item .hi-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.hist-item .hi-top strong { font-family: var(--font-head); font-size: 14px; }
+.hist-item .hi-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.hist-item .hi-chev { flex: none; color: var(--muted); font-size: 13px; }
 .cc-add { margin-top: 12px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border-radius: 11px; font-family: var(--font-head); font-size: 13px; font-weight: 700; cursor: pointer; color: var(--purple); background: rgba(168,85,247,.12); border: 1px solid rgba(168,85,247,.32); transition: .2s; }
 .cc-add:hover { background: var(--purple); color: #fff; transform: translateY(-1px); }
 

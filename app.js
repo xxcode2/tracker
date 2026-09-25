@@ -645,6 +645,7 @@ function saveTxFromForm() {
 /* ---- Detail modal ---- */
 function showDetail(id) {
   const t = getTx(id); if (!t) return;
+  $('#detailTitle').textContent = 'Detail Transaksi';
   const payments = (t.payments || []).map(p => `<div class="tc-line"><span><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span> ${esc(p.method)} · ${fmtDate(p.date)}</span><strong>${fmtRp(p.amount)}</strong></div>`).join('') || '<p class="stat-sub">Belum ada pembayaran.</p>';
   const items = (t.items || []).map((i, idx) => `<div class="tc-line"><span>Barang ${idx + 1}</span><strong>${fmtRp(i.price)} <span class="badge ${i.status === 'batal' ? 'b-batal' : 'b-keep'}">${i.status}</span></strong></div>`).join('');
   $('#detailBody').innerHTML = `
@@ -656,6 +657,47 @@ function showDetail(id) {
     <div class="panel" style="margin-bottom:14px"><div class="panel-head"><h3>Pembayaran</h3></div>${payments}</div>
     <div class="totals-bar"><span>Total: <strong>${fmtRp(txTotal(t))}</strong></span><span>Dibayar: <strong>${fmtRp(txPaidTotal(t))}</strong></span><span>Sisa: <strong class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</strong></span></div>
     <div class="tc-foot" style="margin-top:14px">${statusBadge(t)}${t.checkoutStatus ? `<span class="badge b-green">${esc(t.shopeeUsername || 'SUDAH CO')}</span>` : ''}</div>`;
+  openModal('#modalDetail');
+}
+
+/* ---- Customer history timeline ---- */
+function showCustomerHistory(name) {
+  const txs = TRANSACTIONS.filter(t => ((t.customerName || 'Tanpa Nama').trim()) === name)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0)));
+  if (!txs.length) return toast('Belum ada riwayat untuk customer ini', 'warn');
+  const totalBelanja = txs.reduce((s, t) => s + txTotal(t), 0);
+  const totalPcs = txs.reduce((s, t) => s + txQty(t), 0);
+  const totalBayar = txs.reduce((s, t) => s + txPaidTotal(t), 0);
+  const sisa = txs.reduce((s, t) => s + txRemaining(t), 0);
+  const coCount = txs.filter(t => t.checkoutStatus).length;
+  $('#detailTitle').textContent = 'Riwayat Customer';
+  $('#detailBody').innerHTML = `
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+      <div class="avatar" style="width:52px;height:52px;font-size:20px;background:${avatarColor(name)}">${esc(initials(name))}</div>
+      <div><strong style="font-size:18px">${esc(name)}</strong><br><span class="stat-sub">${txs.length} order · terakhir ${fmtDate(txs[0].date)}</span></div>
+    </div>
+    <div class="cc-stats" style="margin-bottom:14px">
+      <div><span>Total Belanja</span><strong>${fmtRp(totalBelanja)}</strong></div>
+      <div><span>Total Barang</span><strong>${totalPcs} pcs</strong></div>
+      <div><span>Dibayar</span><strong>${fmtRp(totalBayar)}</strong></div>
+      <div><span>Sisa / Piutang</span><strong class="${sisa > 0 ? 'trend-down' : ''}">${fmtRp(sisa)}</strong></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-primary" data-action="add-for-customer" data-name="${esc(name)}"><i class="fa-solid fa-plus"></i> Order Baru</button>
+    </div>
+    <div class="panel"><div class="panel-head"><h3>Timeline Order</h3><span class="badge b-muted">${coCount}/${txs.length} CO</span></div>
+      <div class="hist-list">
+        ${txs.map(t => `
+        <div class="hist-item" data-act="view" data-id="${t.id}">
+          <div class="hi-date">${fmtDate(t.date)}</div>
+          <div class="hi-body">
+            <div class="hi-top"><strong>${txQty(t)} barang · ${fmtRp(txTotal(t))}</strong>${statusBadge(t)}</div>
+            <div class="hi-sub">Dibayar ${fmtRp(txPaidTotal(t))} · Sisa <span class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</span>${t.checkoutStatus ? ' · <i class="fa-solid fa-bag-shopping"></i> CO' : ''}${t.hangus ? ' · <i class="fa-solid fa-fire"></i> hangus' : ''}</div>
+          </div>
+          <i class="fa-solid fa-chevron-right hi-chev"></i>
+        </div>`).join('')}
+      </div>
+    </div>`;
   openModal('#modalDetail');
 }
 
@@ -955,8 +997,10 @@ function renderCustomers() {
   const pg = slicePage(list, 'cust');
   $('#custGrid').innerHTML = list.length ? pg.items.map(c => `
     <div class="cust-card">
-      <div class="avatar" style="background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
-      <strong>${esc(c.name)}</strong>
+      <div class="cc-top" data-action="cust-history" data-name="${esc(c.name)}" title="Lihat riwayat order">
+        <div class="avatar" style="background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
+        <strong>${esc(c.name)}</strong>
+      </div>
       <div class="cc-stats">
         <div><span>Order</span><strong>${c.orders}</strong></div>
         <div><span>Barang</span><strong>${c.qty} pcs</strong></div>
@@ -1223,6 +1267,7 @@ function handleAction(action, el) {
   switch (action) {
     case 'add-tx': openTxModal(); break;
         case 'add-for-customer': openTxModal(); $('#fName').value = el.dataset.name || ''; break;
+    case 'cust-history': showCustomerHistory(el.dataset.name || ''); break;
     case 'add-keep': openTxModal(); break;
     case 'add-dp': openDpModal(id); break;
     case 'goto-checkout': go('checkout'); break;
