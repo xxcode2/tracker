@@ -331,8 +331,12 @@ input, select { font-family: inherit; color: inherit; }
 .kg-badges { display: flex; gap: 5px; justify-content: flex-end; margin-top: 4px; }
 .kg-items { display: flex; flex-direction: column; }
 .kg-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--border); }
-.kg-item .ki-no { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--grad-soft); color: var(--pink); flex: none; }
+.kg-item .ki-no { flex: none; min-width: 18px; text-align: center; color: var(--muted); font-weight: 700; font-family: var(--font-head); font-size: 13px; }
 .kg-item .ki-price { flex: 1; font-weight: 600; font-family: var(--font-head); font-size: 14px; }
+.kg-item.is-batal .ki-price { text-decoration: line-through; opacity: .5; }
+.seg-mini { padding: 3px; }
+.seg-mini button { padding: 6px 10px; }
+.seg-mini button i { font-size: 12px; }
 @media (max-width: 560px) { .kg-head { flex-wrap: wrap; } .kg-sum { width: 100%; text-align: left; order: 3; } .kg-badges { justify-content: flex-start; } .kg-item .seg button { padding: 6px 8px; } }
 .seg { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 10px; }
 .seg button { padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; color: var(--muted); transition: .18s; }

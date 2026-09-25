@@ -258,7 +258,7 @@ function tickClock() {
 /* =========================================================
    ROUTER
    ========================================================= */
-const VIEW_TITLES = { dashboard: 'TIKTOK YANG MENANG', transaksi: 'Transaksi', dp: 'DP Customer', keep: 'Barang Keep', pelunasan: 'Pelunasan', checkout: 'Checkout Shopee', analytics: 'Analytics', customer: 'Data Customer', live: 'Live Selling Mode', pengaturan: 'Pengaturan' };
+const VIEW_TITLES = { dashboard: 'Tracker Penjualan Pakein', transaksi: 'Transaksi', dp: 'DP Customer', keep: 'Barang Keep', pelunasan: 'Pelunasan', checkout: 'Checkout Shopee', analytics: 'Analytics', customer: 'Data Customer', live: 'Live Selling Mode', pengaturan: 'Pengaturan' };
 let currentView = 'dashboard';
 function go(view) {
   currentView = view;
@@ -310,8 +310,9 @@ function dashboardStats() {
   const totalTx = txs.length;
   const totalPcs = txs.reduce((s, t) => s + txQty(t), 0);
   const totalValue = txs.reduce((s, t) => s + txTotal(t), 0);
-  const totalDp = txs.reduce((s, t) => s + txDp(t), 0);
-  const totalLunas = txs.reduce((s, t) => s + txLunas(t), 0);
+  const activeTxs = txs.filter(t => !t.hangus);
+  const totalDp = activeTxs.reduce((s, t) => s + txDp(t), 0);
+  const totalLunas = activeTxs.reduce((s, t) => s + txLunas(t), 0);
   const outstanding = txs.reduce((s, t) => s + txRemaining(t), 0);
   const coDone = txs.filter(t => t.checkoutStatus).length;
   const coPending = totalTx - coDone;
@@ -331,7 +332,7 @@ function renderDashboard() {
     { label: 'Total Customer', value: s.totalTx, sub: `+${s.todayCount} hari ini`, icon: 'fa-users', bg: 'linear-gradient(135deg,#a855f7,#ec4899)', cls: 'trend-up' },
     { label: 'Total Baju', value: s.totalPcs, suffix: ' pcs', sub: `${s.keepItems} masih di-keep`, icon: 'fa-shirt', bg: 'linear-gradient(135deg,#3b82f6,#22d3ee)' },
     { label: 'Total Nilai Barang', value: s.totalValue, money: true, sub: `${s.batalItems} barang batal`, icon: 'fa-sack-dollar', bg: 'linear-gradient(135deg,#f59e0b,#ef4444)' },
-    { label: 'Total DP Masuk', value: s.totalDp, money: true, sub: 'Uang muka diterima', icon: 'fa-hand-holding-dollar', bg: 'linear-gradient(135deg,#22c55e,#14b8a6)' },
+    { label: 'Total DP Masuk', value: s.totalDp, money: true, sub: 'Uang muka aktif (hangus dipisah)', icon: 'fa-hand-holding-dollar', bg: 'linear-gradient(135deg,#22c55e,#14b8a6)' },
     { label: 'Total Pelunasan', value: s.totalLunas, money: true, sub: 'Pembayaran akhir', icon: 'fa-circle-check', bg: 'linear-gradient(135deg,#14b8a6,#3b82f6)' },
     { label: 'Belum Lunas', value: s.outstanding, money: true, sub: 'Sisa pembayaran', icon: 'fa-clock', bg: 'linear-gradient(135deg,#ef4444,#f97316)', cls: 'trend-down' },
     { label: 'Sudah Checkout', value: s.coDone, suffix: ' trx', sub: `${s.coPending} belum CO`, icon: 'fa-bag-shopping', bg: 'linear-gradient(135deg,#8b5cf6,#d946ef)' },
@@ -840,18 +841,18 @@ function renderKeep() {
     <div class="keep-group">
       <div class="kg-head">
         <div class="avatar" style="background:${avatarColor(g.t.customerName)}">${esc(initials(g.t.customerName))}</div>
-        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${fmtDate(g.t.date)} · ${g.items.length} barang${g.t.hangus ? ' · ⚠️ hangus' : ''}</span></div>
+        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${g.k} keep${g.ba ? ' · ' + g.ba + ' batal' : ''} · ${fmtDate(g.t.date)}${g.t.hangus ? ' · ⚠️ hangus' : ''}</span></div>
         ${(txPaidTotal(g.t) > 0 && !g.t.hangus) ? `<button class="kg-hangus" data-act="hangus" data-id="${g.t.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk"><i class="fa-solid fa-fire"></i> DP Hangus</button>` : ''}
         <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
       </div>
       <div class="kg-items">
         ${g.items.map(({ i, idx }) => `
-        <div class="kg-item">
-          <span class="ki-no"><i class="fa-solid fa-shirt"></i></span>
+        <div class="kg-item${i.status === 'batal' ? ' is-batal' : ''}">
+          <span class="ki-no">${idx + 1}.</span>
           <span class="ki-price">${fmtRp(i.price)}</span>
-          <div class="seg">
-            <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${g.t.id}" data-idx="${idx}">KEEP</button>
-            <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${g.t.id}" data-idx="${idx}">BATAL</button>
+          <div class="seg seg-mini">
+            <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${g.t.id}" data-idx="${idx}" title="Tetap keep"><i class="fa-solid fa-bookmark"></i></button>
+            <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${g.t.id}" data-idx="${idx}" title="Batalkan barang"><i class="fa-solid fa-xmark"></i></button>
           </div>
         </div>`).join('')}
       </div>
@@ -969,9 +970,11 @@ function lastNDays(n) {
 }
 function renderAnalytics() {
   const txs = TRANSACTIONS;
+  const activeTxs = txs.filter(t => !t.hangus);
   const totalValue = txs.reduce((s, t) => s + txTotal(t), 0);
-  const totalDp = txs.reduce((s, t) => s + txDp(t), 0);
-  const totalLunas = txs.reduce((s, t) => s + txLunas(t), 0);
+  const totalDp = activeTxs.reduce((s, t) => s + txDp(t), 0);
+  const totalLunas = activeTxs.reduce((s, t) => s + txLunas(t), 0);
+  const hangusIncome = txs.filter(t => t.hangus).reduce((s, t) => s + (t.hangusAmount != null ? t.hangusAmount : txPaidTotal(t)), 0);
   const outstanding = txs.reduce((s, t) => s + txRemaining(t), 0);
   const totalPcs = txs.reduce((s, t) => s + txQty(t), 0);
   const n = txs.length || 1;
@@ -981,7 +984,7 @@ function renderAnalytics() {
   const lunasCount = txs.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length;
   $('#analyticsStats').innerHTML = [
     { k: 'Total Omzet', v: fmtRp(totalValue) }, { k: 'Total DP', v: fmtRp(totalDp) },
-    { k: 'Total Pelunasan', v: fmtRp(totalLunas) }, { k: 'Outstanding', v: fmtRp(outstanding) },
+    { k: 'Total Pelunasan', v: fmtRp(totalLunas) }, { k: 'Outstanding', v: fmtRp(outstanding) }, { k: 'Pendapatan Hangus', v: fmtRp(hangusIncome) },
     { k: 'Avg Order Value', v: fmtRp(totalValue / n) }, { k: 'Rata² Harga/Barang', v: fmtRp(totalPcs ? totalValue / totalPcs : 0) }, { k: 'Avg Item/Customer', v: (totalPcs / n).toFixed(1) },
     { k: 'Total Customer', v: custCount }, { k: 'Total Transaksi', v: txs.length },
     { k: 'Total Pcs', v: totalPcs }, { k: 'Sudah CO', v: coDone }, { k: 'Belum CO', v: txs.length - coDone },
