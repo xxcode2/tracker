@@ -321,6 +321,15 @@
           <div class="field field-full keep-note">
             <label>Setiap barang cukup isi harga lalu pilih status: 🟡 Keep · 🔴 Batal · 🟢 Final. Barang Batal tidak dihitung ke total.</label>
           </div>
+
+          <div class="field field-full" id="initDpWrap">
+            <div class="field-head"><label>Uang Muka / DP awal <em>(opsional — isi jika customer langsung bayar di awal)</em></label></div>
+            <div class="init-dp">
+              <input id="fDpAmount" type="number" min="0" step="0.5" placeholder="Nominal DP (ribu), mis. 30" />
+              <select id="fDpMethod" class="select"></select>
+            </div>
+            <span class="hint">Sisa setelah DP: <strong id="fDpRemaining">Rp0</strong> · Isi penuh = langsung LUNAS. Kosongkan jika belum bayar.</span>
+          </div>
         </form>
       </div>
       <div class="modal-foot">
@@ -380,6 +389,9 @@
           <div class="field"><label>Nomor Pesanan (opsional)</label><input id="coOrderNo" placeholder="2409..." /></div>
           <div class="field"><label>Tanggal CO</label><input type="date" id="coDate" /></div>
           <div class="field field-full" id="coWarnWrap" hidden><div class="warn" id="coWarn"></div></div>
+          <div class="field field-full" id="coLunasWrap" hidden>
+            <label class="co-check"><input type="checkbox" id="coPaidNow" /> <span>Sudah dibayar penuh lewat Shopee — tandai <strong>LUNAS</strong> otomatis (untuk order kecil yang langsung CO).</span></label>
+          </div>
         </form>
       </div>
       <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveCo"><i class="fa-solid fa-bag-shopping"></i> Konfirmasi Checkout</button></div>

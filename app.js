@@ -546,6 +546,8 @@ function recomputeFormTotals() {
   });
   $('#formTotal').textContent = fmtRp(total);
   $('#formQty').textContent = qty + ' pcs';
+  const remEl = $('#fDpRemaining');
+  if (remEl) remEl.textContent = fmtRp(Math.max(0, total - toRp($('#fDpAmount').value)));
 }
 function addItemRow(item) {
   const wrap = $('#itemsWrap');
@@ -569,6 +571,8 @@ function openTxModal(id) {
     addItemRow();
   }
   recomputeFormTotals();
+  fillMethodSelect($('#fDpMethod'), SETTINGS.defaultMethod);
+  $('#initDpWrap').style.display = id ? 'none' : '';
   openModal('#modalTx');
 }
 function saveTxFromForm() {
@@ -592,6 +596,8 @@ function saveTxFromForm() {
     toast('Transaksi diperbarui', 'success');
   } else {
     t = { id: uid(), customerName: name, tiktokUsername: $('#fTiktok').value.trim(), date: $('#fDate').value || todayStr(), items, payments: [], checkoutStatus: false, shopeeUsername: '', shopeeOrderNumber: '', checkoutDate: '', createdAt: Date.now() };
+    const dpAmt = toRp($('#fDpAmount').value);
+    if (dpAmt > 0) t.payments.push({ kind: dpAmt >= txTotal(t) ? 'pelunasan' : 'dp', amount: dpAmt, method: $('#fDpMethod').value || SETTINGS.defaultMethod, date: t.date, at: Date.now() });
     TRANSACTIONS.push(t);
     toast('Transaksi berhasil ditambahkan', 'success');
   }
@@ -723,11 +729,17 @@ function openCoModal(txId) {
   $('#coReceiver').value = t.customerName;
   $('#coWarnWrap').hidden = !unpaid;
   $('#coWarn').innerHTML = '⚠ Transaksi ini <strong>belum lunas</strong> (sisa ' + fmtRp(txRemaining(t)) + '). Pelunasan harus selesai sebelum checkout Shopee.';
+  $('#coLunasWrap').hidden = !unpaid;
+  $('#coPaidNow').checked = false;
   openModal('#modalCo');
 }
 function saveCo() {
   const t = getTx(activeCoId); if (!t) return;
-  if (txRemaining(t) > 0) return toast('Transaksi belum lunas — tidak bisa checkout', 'error');
+  if (txRemaining(t) > 0) {
+    if (!$('#coPaidNow').checked) return toast('Belum lunas — centang "dibayar penuh lewat Shopee" atau catat pelunasan dulu.', 'error');
+    t.payments = t.payments || [];
+    t.payments.push({ kind: 'pelunasan', amount: txRemaining(t), method: 'ShopeePay', date: $('#coDate').value || todayStr(), at: Date.now() });
+  }
   const shopee = $('#coShopee').value.trim();
   if (!shopee) return toast('Nama akun Shopee wajib diisi', 'error');
   t.checkoutStatus = true;
@@ -1122,6 +1134,7 @@ function handleAct(act, el) {
     case 'del': askDelete(id); break;
     case 'co': openCoModal(id); break;
     case 'lunas': openLunasModal(id); break;
+    case 'add-dp': openDpModal(id); break;
     case 'live-keep': liveSetAll(id, 'final'); break;
     case 'live-cancel': confirmDialog('Batalkan Transaksi', `Batalkan semua barang untuk ${getTx(id)?.customerName || ''}?`, 'Batalkan', () => liveSetAll(id, 'batal')); break;
   }
@@ -1149,6 +1162,7 @@ function wireEvents() {
 
   // transaction form dynamic items
   $('#addItem').addEventListener('click', () => addItemRow());
+  $('#fDpAmount').addEventListener('input', recomputeFormTotals);
   $('#itemsWrap').addEventListener('input', e => { if (e.target.classList.contains('item-price')) recomputeFormTotals(); });
   $('#itemsWrap').addEventListener('change', e => { if (e.target.classList.contains('item-status')) recomputeFormTotals(); });
   $('#itemsWrap').addEventListener('click', e => { const rm = e.target.closest('.rm'); if (rm) { rm.closest('.item-row').remove(); recomputeFormTotals(); if (!$$('#itemsWrap .item-row').length) addItemRow(); } });
