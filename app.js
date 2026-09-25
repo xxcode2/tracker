@@ -813,21 +813,44 @@ function renderKeep() {
     { k: 'Barang FINAL', v: s.finalItems },
     { k: 'Barang BATAL', v: s.batalItems },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
-  const items = [];
-  TRANSACTIONS.forEach(t => (t.items || []).forEach((i, idx) => items.push({ t, i, idx })));
-  const list = items.filter(x => x.i.status !== 'batal');
-  const pg = slicePage(list, 'keep');
-  $('#keepList').innerHTML = list.length ? pg.items.map(({ t, i, idx }) => `
-    <div class="keep-row">
-      <div class="avatar" style="background:${avatarColor(t.customerName)};width:38px;height:38px;font-size:14px">${esc(initials(t.customerName))}</div>
-      <div class="k-main"><strong>Barang ${idx + 1}</strong>
-        <span>${esc(t.customerName)} · ${fmtRp(i.price)}</span></div>
-      <div class="seg">
-        <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${t.id}" data-idx="${idx}">KEEP</button>
-        <button class="${i.status === 'final' ? 'on-final' : ''}" data-item-status="final" data-id="${t.id}" data-idx="${idx}">FINAL</button>
-        <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${t.id}" data-idx="${idx}">BATAL</button>
+  const q = ($('#keepSearch') && $('#keepSearch').value || '').toLowerCase();
+  const f = ($('#keepStatusFilter') && $('#keepStatusFilter').value) || 'all';
+  const groups = [];
+  TRANSACTIONS.forEach(t => {
+    if (q && !(String(t.customerName || '').toLowerCase().includes(q))) return;
+    const items = [];
+    (t.items || []).forEach((i, idx) => {
+      const st = i.status || 'keep';
+      if (f === 'all' ? st !== 'batal' : st === f) items.push({ i, idx });
+    });
+    if (!items.length) return;
+    const k = items.filter(x => x.i.status === 'keep').length;
+    const fi = items.filter(x => x.i.status === 'final').length;
+    const ba = items.filter(x => x.i.status === 'batal').length;
+    const gTotal = items.filter(x => x.i.status !== 'batal').reduce((sum, x) => sum + (x.i.price || 0), 0);
+    groups.push({ t, items, k, fi, ba, gTotal });
+  });
+  const pg = slicePage(groups, 'keep');
+  $('#keepList').innerHTML = groups.length ? pg.items.map(g => `
+    <div class="keep-group">
+      <div class="kg-head">
+        <div class="avatar" style="background:${avatarColor(g.t.customerName)}">${esc(initials(g.t.customerName))}</div>
+        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${fmtDate(g.t.date)} · ${g.items.length} barang</span></div>
+        <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.fi ? `<span class="badge b-green">${g.fi} Final</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
       </div>
-    </div>`).join('') + pagerHTML('keep', pg.page, pg.pages, pg.total) : emptyState('Belum ada barang di-keep', 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
+      <div class="kg-items">
+        ${g.items.map(({ i, idx }) => `
+        <div class="kg-item">
+          <span class="ki-no"><i class="fa-solid fa-shirt"></i></span>
+          <span class="ki-price">${fmtRp(i.price)}</span>
+          <div class="seg">
+            <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${g.t.id}" data-idx="${idx}">KEEP</button>
+            <button class="${i.status === 'final' ? 'on-final' : ''}" data-item-status="final" data-id="${g.t.id}" data-idx="${idx}">FINAL</button>
+            <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${g.t.id}" data-idx="${idx}">BATAL</button>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>`).join('') + pagerHTML('keep', pg.page, pg.pages, pg.total) : emptyState(TRANSACTIONS.length ? 'Tidak ada hasil' : 'Belum ada barang di-keep', (q || f !== 'all') ? 'Coba ubah pencarian / filter status.' : 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
 }
 function setItemStatus(txId, idx, status) {
   const t = getTx(txId); if (!t || !t.items[idx]) return;
@@ -1250,6 +1273,8 @@ function wireEvents() {
   $('#txTo').addEventListener('change', () => { resetPage('tx'); renderTransactions(); });
   $('#custSearch').addEventListener('input', () => { resetPage('cust'); renderCustomers(); });
   $('#liveSearch').addEventListener('input', () => { resetPage('live'); renderLive(); });
+  $('#keepSearch').addEventListener('input', () => { resetPage('keep'); renderKeep(); });
+  $('#keepStatusFilter').addEventListener('change', () => { resetPage('keep'); renderKeep(); });
 
   // file inputs
   $('#importFile').addEventListener('change', e => readFileJSON(e.target, data => ingestTransactions(Array.isArray(data) ? data : data.transactions)));

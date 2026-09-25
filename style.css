@@ -320,12 +320,20 @@ input, select { font-family: inherit; color: inherit; }
 .tx-card .tc-foot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 
 /* keep list */
-.keep-list { display: flex; flex-direction: column; gap: 10px; }
-.keep-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-solid); border: 1px solid var(--border); transition: .2s; }
-.keep-row:hover { border-color: var(--yellow); transform: translateX(4px); }
-.keep-row .k-main { flex: 1; }
-.keep-row .k-main strong { font-size: 14px; }
-.keep-row .k-main span { display: block; font-size: 12px; color: var(--muted); }
+.keep-list { display: flex; flex-direction: column; gap: 12px; }
+.keep-group { border-radius: var(--radius-sm); background: var(--surface-solid); border: 1px solid var(--border); overflow: hidden; transition: .2s; animation: fadeUp .35s ease both; }
+.keep-group:hover { border-color: var(--yellow); }
+.kg-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: linear-gradient(90deg, var(--grad-soft), transparent 70%); }
+.kg-name { flex: 1; min-width: 0; }
+.kg-name strong { font-size: 17px; font-family: var(--font-head); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kg-name span { display: block; font-size: 12px; color: var(--muted); }
+.kg-sum { text-align: right; font-family: var(--font-head); font-weight: 700; font-size: 14px; flex: none; }
+.kg-badges { display: flex; gap: 5px; justify-content: flex-end; margin-top: 4px; }
+.kg-items { display: flex; flex-direction: column; }
+.kg-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.kg-item .ki-no { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--grad-soft); color: var(--pink); flex: none; }
+.kg-item .ki-price { flex: 1; font-weight: 600; font-family: var(--font-head); font-size: 14px; }
+@media (max-width: 560px) { .kg-head { flex-wrap: wrap; } .kg-sum { width: 100%; text-align: left; order: 3; } .kg-badges { justify-content: flex-start; } .kg-item .seg button { padding: 6px 8px; } }
 .seg { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 10px; }
 .seg button { padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; color: var(--muted); transition: .18s; }
 .seg button.on-keep { background: var(--yellow); color: #221a00; }
