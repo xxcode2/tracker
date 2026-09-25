@@ -994,6 +994,7 @@ function renderLive() {
       <div class="lc-stats"><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span><span class="${txRemaining(t) > 0 ? 'trend-down' : 'trend-up'}">sisa ${fmtRp(txRemaining(t))}</span></div>
       <div class="tc-foot">${statusBadge(t)}</div>
       <div class="live-actions">
+        <button class="la-add" data-act="edit" data-id="${t.id}"><i class="fa-solid fa-plus"></i>BARANG</button>
         <button class="la-keep" data-act="live-keep" data-id="${t.id}"><i class="fa-solid fa-bookmark"></i>KEEP</button>
         <button class="la-dp" data-act="add-dp" data-id="${t.id}"><i class="fa-solid fa-hand-holding-dollar"></i>DP</button>
         <button class="la-cancel" data-act="live-cancel" data-id="${t.id}"><i class="fa-solid fa-ban"></i>CANCEL</button>
@@ -1191,10 +1192,6 @@ function wireEvents() {
   $('#importFile').addEventListener('change', e => readFileJSON(e.target, data => ingestTransactions(Array.isArray(data) ? data : data.transactions)));
   $('#restoreFile').addEventListener('change', e => readFileJSON(e.target, restoreFrom));
 
-  // welcome modal
-  $('#welcomeDemo').addEventListener('click', () => { closeModal('#modalWelcome'); loadDemo(); });
-  $('#welcomeEmpty').addEventListener('click', () => { SETTINGS.onboarded = true; saveSettings(); closeModal('#modalWelcome'); });
-
   // keyboard: Esc closes modal, Ctrl+K search focus
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { const m = $$('.modal:not([hidden])'); if (m.length) closeModal(m[m.length - 1]); }
@@ -1215,6 +1212,5 @@ function init() {
 }
 async function bootstrapCloud() {
   await initCloud();
-  if (!SETTINGS.onboarded && TRANSACTIONS.length === 0) openModal('#modalWelcome');
 }
 document.addEventListener('DOMContentLoaded', init);

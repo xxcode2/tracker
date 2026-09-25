@@ -366,10 +366,10 @@ input, select { font-family: inherit; color: inherit; }
 .live-card { padding: 18px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; animation: fadeUp .4s ease both; }
 .live-card .lc-head { display: flex; align-items: center; gap: 12px; }
 .live-card .lc-stats { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; }
-.live-actions { display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; }
+.live-actions { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
 .live-actions button { padding: 10px 4px; border-radius: 10px; font-size: 11px; font-weight: 700; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: .18s; }
 .live-actions button:active { transform: scale(.92); }
-.la-keep { background: var(--yellow); color:#231a00; } .la-dp { background: var(--blue); } .la-cancel { background: var(--red); } .la-lunas { background: var(--green); } .la-co { background: var(--purple); }
+.la-keep { background: var(--yellow); color:#231a00; } .la-dp { background: var(--blue); } .la-cancel { background: var(--red); } .la-lunas { background: var(--green); } .la-co { background: var(--purple); } .la-add { background: var(--pink); }
 
 /* customer card */
 .cust-card { padding: 18px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); text-align: center; transition: transform .22s; animation: fadeUp .4s ease both; }
