@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>PAKEIN TRACKER — Live Selling Management Dashboard</title>
+  <meta name="description" content="Dashboard manajemen dagangan / live selling TikTok: pembeli, keep, DP, pelunasan, checkout Shopee, dan analytics." />
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Google font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ===================== APP LAYOUT ===================== -->
+  <div id="app" class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo"><i class="fa-brands fa-tiktok"></i></div>
+        <div class="brand-text">
+          <strong>PAKEIN TRACKER</strong>
+          <span>TikTok Yang Menang</span>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-view="dashboard"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></button>
+        <button class="nav-item" data-view="transaksi"><i class="fa-solid fa-receipt"></i><span>Transaksi</span></button>
+        <button class="nav-item" data-view="dp"><i class="fa-solid fa-hand-holding-dollar"></i><span>DP</span></button>
+        <button class="nav-item" data-view="keep"><i class="fa-solid fa-bookmark"></i><span>Keep</span></button>
+        <button class="nav-item" data-view="pelunasan"><i class="fa-solid fa-circle-check"></i><span>Pelunasan</span></button>
+        <button class="nav-item" data-view="checkout"><i class="fa-solid fa-bag-shopping"></i><span>Checkout Shopee</span></button>
+        <button class="nav-item" data-view="analytics"><i class="fa-solid fa-chart-line"></i><span>Analytics</span></button>
+        <button class="nav-item" data-view="customer"><i class="fa-solid fa-users"></i><span>Data Customer</span></button>
+        <button class="nav-item" data-view="live"><i class="fa-solid fa-tower-broadcast"></i><span>Live Mode</span></button>
+        <button class="nav-item" data-view="pengaturan"><i class="fa-solid fa-gear"></i><span>Pengaturan</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <button class="theme-toggle" id="themeToggleSidebar" title="Ganti tema">
+          <i class="fa-solid fa-moon"></i><span>Dark</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <!-- Main column -->
+    <div class="main">
+      <!-- Header -->
+      <header class="topbar">
+        <button class="hamburger" id="hamburger" aria-label="Menu"><i class="fa-solid fa-bars"></i></button>
+        <div class="topbar-title">
+          <h1 id="topbarHeading">TIKTOK YANG MENANG</h1>
+          <p>Live Selling Management Dashboard</p>
+        </div>
+        <div class="topbar-right">
+          <div class="clockbox">
+            <span id="headerDate">—</span>
+            <strong id="headerClock">--:--:--</strong>
+          </div>
+          <div class="sys-status"><span class="dot"></span> SYSTEM READY</div>
+          <button class="theme-toggle" id="themeToggleTop" title="Ganti tema"><i class="fa-solid fa-moon"></i></button>
+        </div>
+      </header>
+
+      <!-- Views container -->
+      <main class="content" id="content">
+
+        <!-- ============ DASHBOARD ============ -->
+        <section class="view active" data-view="dashboard">
+          <div class="section-head">
+            <h2>Ringkasan Performa</h2>
+            <div class="quick-actions" id="quickActions">
+              <button class="btn btn-primary" data-action="add-tx"><i class="fa-solid fa-plus"></i> Tambah Transaksi</button>
+              <button class="btn btn-ghost" data-action="add-dp"><i class="fa-solid fa-hand-holding-dollar"></i> Catat DP</button>
+              <button class="btn btn-ghost" data-action="add-keep"><i class="fa-solid fa-bookmark"></i> Tambah Keep</button>
+              <button class="btn btn-ghost" data-action="goto-checkout"><i class="fa-solid fa-bag-shopping"></i> Checkout</button>
+              <button class="btn btn-ghost" data-action="goto-pelunasan"><i class="fa-solid fa-circle-check"></i> Pelunasan</button>
+            </div>
+          </div>
+
+          <div class="stat-grid" id="statGrid"><!-- injected --></div>
+
+          <div class="dash-cols">
+            <div class="panel">
+              <div class="panel-head"><h3><i class="fa-solid fa-calendar-day"></i> Laporan Hari Ini</h3></div>
+              <div class="daily-report" id="dailyReport"><!-- injected --></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3><i class="fa-solid fa-wallet"></i> Pembayaran per Metode</h3></div>
+              <div class="method-list" id="methodList"><!-- injected --></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-clock-rotate-left"></i> Transaksi Terbaru</h3></div>
+            <div class="recent-grid" id="recentGrid"><!-- injected --></div>
+          </div>
+        </section>
+
+        <!-- ============ TRANSAKSI ============ -->
+        <section class="view" data-view="transaksi">
+          <div class="section-head">
+            <h2>Semua Transaksi</h2>
+            <button class="btn btn-primary" data-action="add-tx"><i class="fa-solid fa-plus"></i> Tambah Transaksi</button>
+          </div>
+          <div class="toolbar">
+            <div class="search"><i class="fa-solid fa-magnifying-glass"></i>
+              <input id="txSearch" type="text" placeholder="Cari customer, username, atau nama Shopee..." />
+            </div>
+            <select id="txStatusFilter" class="select">
+              <option value="all">Semua</option>
+              <option value="belum-dp">Belum DP</option>
+              <option value="sudah-dp">Sudah DP</option>
+              <option value="belum-lunas">Belum Lunas</option>
+              <option value="lunas">Lunas</option>
+              <option value="keep">Keep</option>
+              <option value="final">Final</option>
+              <option value="belum-co">Belum CO</option>
+              <option value="sudah-co">Sudah CO</option>
+            </select>
+            <select id="txDateFilter" class="select">
+              <option value="all">Semua Tanggal</option>
+              <option value="today">Hari ini</option>
+              <option value="yesterday">Kemarin</option>
+              <option value="7d">7 Hari</option>
+              <option value="30d">30 Hari</option>
+              <option value="custom">Custom</option>
+            </select>
+            <div class="custom-range" id="customRange" hidden>
+              <input type="date" id="txFrom" class="select" /> <span>s/d</span>
+              <input type="date" id="txTo" class="select" />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl" id="txTable">
+              <thead>
+                <tr>
+                  <th>Tanggal</th><th>Customer</th><th>TikTok</th><th>Barang</th>
+                  <th>Total</th><th>DP</th><th>Sisa</th><th>Status DP</th>
+                  <th>Keep</th><th>CO</th><th>Shopee</th><th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="txBody"><!-- injected --></tbody>
+            </table>
+          </div>
+          <div class="mobile-cards" id="txMobileCards"><!-- injected --></div>
+          <div class="empty" id="txEmpty" hidden></div>
+        </section>
+
+        <!-- ============ DP ============ -->
+        <section class="view" data-view="dp">
+          <div class="section-head">
+            <h2>DP Customer</h2>
+            <button class="btn btn-primary" data-action="add-dp"><i class="fa-solid fa-plus"></i> Catat DP</button>
+          </div>
+          <div class="panel"><div id="dpOverview" class="mini-grid"></div></div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-list-check"></i> Riwayat Pembayaran</h3></div>
+            <div class="table-wrap">
+              <table class="tbl"><thead><tr><th>Tanggal</th><th>Customer</th><th>Jenis</th><th>Nominal</th><th>Metode</th></tr></thead>
+              <tbody id="paymentHistory"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ KEEP ============ -->
+        <section class="view" data-view="keep">
+          <div class="section-head"><h2>Barang Di-Keep</h2></div>
+          <div class="mini-grid" id="keepStats"></div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-bookmark"></i> Daftar Barang Keep</h3></div>
+            <div class="keep-list" id="keepList"></div>
+          </div>
+        </section>
+
+        <!-- ============ PELUNASAN ============ -->
+        <section class="view" data-view="pelunasan">
+          <div class="section-head"><h2>Pelunasan</h2></div>
+          <div class="mini-grid" id="pelunasanStats"></div>
+          <div class="card-grid" id="pelunasanList"></div>
+        </section>
+
+        <!-- ============ CHECKOUT ============ -->
+        <section class="view" data-view="checkout">
+          <div class="section-head"><h2>Checkout Shopee</h2></div>
+          <div class="panel" id="coProgressPanel"></div>
+          <div class="card-grid" id="coList"></div>
+        </section>
+
+        <!-- ============ ANALYTICS ============ -->
+        <section class="view" data-view="analytics">
+          <div class="section-head"><h2>Analytics Detail</h2></div>
+          <div class="mini-grid" id="analyticsStats"></div>
+          <div class="chart-grid">
+            <div class="panel"><div class="panel-head"><h3>Penjualan Harian</h3></div><canvas id="chartDaily"></canvas></div>
+            <div class="panel"><div class="panel-head"><h3>Metode Pembayaran</h3></div><canvas id="chartMethod"></canvas></div>
+            <div class="panel"><div class="panel-head"><h3>Status Customer</h3></div><canvas id="chartStatus"></canvas></div>
+            <div class="panel"><div class="panel-head"><h3>Checkout</h3></div><canvas id="chartCheckout"></canvas></div>
+            <div class="panel"><div class="panel-head"><h3>Barang Terjual per Hari</h3></div><canvas id="chartItems"></canvas></div>
+          </div>
+          <div class="dash-cols">
+            <div class="panel"><div class="panel-head"><h3><i class="fa-solid fa-trophy"></i> Top Customer (Total Belanja)</h3></div><ol class="rank" id="topByValue"></ol></div>
+            <div class="panel"><div class="panel-head"><h3><i class="fa-solid fa-shirt"></i> Top Customer (Jumlah Barang)</h3></div><ol class="rank" id="topByQty"></ol></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-arrows-turn-to-dots"></i> Conversion Funnel</h3></div>
+            <div id="funnel" class="funnel"></div>
+          </div>
+        </section>
+
+        <!-- ============ DATA CUSTOMER ============ -->
+        <section class="view" data-view="customer">
+          <div class="section-head"><h2>Data Customer</h2></div>
+          <div class="toolbar"><div class="search"><i class="fa-solid fa-magnifying-glass"></i>
+            <input id="custSearch" type="text" placeholder="Cari customer..." /></div></div>
+          <div class="card-grid" id="custGrid"></div>
+        </section>
+
+        <!-- ============ LIVE MODE ============ -->
+        <section class="view" data-view="live">
+          <div class="section-head">
+            <h2><span class="live-dot"></span> Live Selling Mode</h2>
+            <button class="btn btn-primary" data-action="add-tx"><i class="fa-solid fa-bolt"></i> Transaksi Cepat</button>
+          </div>
+          <p class="hint">Mode cepat saat live. Ketik nama untuk menyaring, lalu gunakan tombol aksi. Prioritas: kecepatan.</p>
+          <div class="toolbar"><div class="search"><i class="fa-solid fa-magnifying-glass"></i>
+            <input id="liveSearch" type="text" placeholder="Cari nama customer aktif..." /></div></div>
+          <div class="live-grid" id="liveList"></div>
+        </section>
+
+        <!-- ============ PENGATURAN ============ -->
+        <section class="view" data-view="pengaturan">
+          <div class="section-head"><h2>Pengaturan</h2></div>
+          <div class="dash-cols">
+            <div class="panel">
+              <div class="panel-head"><h3><i class="fa-solid fa-database"></i> Data &amp; Backup</h3></div>
+              <div class="settings-actions">
+                <button class="btn btn-ghost" data-action="export-csv"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
+                <button class="btn btn-ghost" data-action="export-json"><i class="fa-solid fa-file-code"></i> Export JSON</button>
+                <button class="btn btn-ghost" data-action="import-json"><i class="fa-solid fa-file-import"></i> Import JSON</button>
+                <button class="btn btn-ghost" data-action="backup"><i class="fa-solid fa-shield-halved"></i> Backup Data</button>
+                <button class="btn btn-ghost" data-action="restore"><i class="fa-solid fa-clock-rotate-left"></i> Restore Data</button>
+                <button class="btn btn-ghost" data-action="load-demo"><i class="fa-solid fa-wand-magic-sparkles"></i> Muat Demo Data</button>
+                <button class="btn btn-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Hapus Semua Data</button>
+              </div>
+              <input type="file" id="importFile" accept="application/json" hidden />
+              <input type="file" id="restoreFile" accept="application/json" hidden />
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3><i class="fa-solid fa-circle-info"></i> Info &amp; Tampilan</h3></div>
+              <div class="settings-info">
+                <p>PAKEIN TRACKER berjalan sepenuhnya lokal. Semua data tersimpan di LocalStorage browser.</p>
+                <p>Total transaksi tersimpan: <strong id="settingsTxCount">0</strong></p>
+                <div class="field-inline">
+                  <label>Preferensi Metode DP</label>
+                  <div id="methodSetting" class="chip-row"></div>
+                </div>
+                <button class="btn btn-ghost" data-action="toggle-theme"><i class="fa-solid fa-moon"></i> Ganti Dark / Light</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="foot">
+          <strong>TIKTOK YANG MENANG</strong>
+          <span>Live Selling Management</span>
+          <em>Local Mode • Data tersimpan di browser</em>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: TRANSACTION ===================== -->
+  <div class="modal" id="modalTx" hidden>
+    <div class="modal-card modal-lg">
+      <div class="modal-head">
+        <h3 id="modalTxTitle">Tambah Transaksi</h3>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <form id="txForm" class="form-grid">
+          <input type="hidden" id="txId" />
+          <div class="field"><label>Nama Customer *</label><input id="fName" placeholder="Siti" /></div>
+          <div class="field"><label>Username TikTok</label><input id="fTiktok" placeholder="@siti_shop" /></div>
+          <div class="field field-full"><label>Tanggal Transaksi</label><input type="date" id="fDate" /></div>
+
+          <div class="field field-full">
+            <div class="field-head"><label>Daftar Barang (harga dalam ribu)</label>
+              <button type="button" class="btn btn-small" id="addItem"><i class="fa-solid fa-plus"></i> Tambah Barang</button>
+            </div>
+            <div id="itemsWrap" class="items-wrap"></div>
+            <div class="totals-bar">
+              <span>Total: <strong id="formTotal">Rp0</strong></span>
+              <span>Jumlah: <strong id="formQty">0 pcs</strong></span>
+            </div>
+          </div>
+
+          <div class="field field-full keep-note">
+            <label>Setiap barang cukup isi harga lalu pilih status: 🟡 Keep · 🔴 Batal · 🟢 Final. Barang Batal tidak dihitung ke total.</label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-close>Batal</button>
+        <button class="btn btn-primary" id="saveTx"><i class="fa-solid fa-floppy-disk"></i> Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: DP ===================== -->
+  <div class="modal" id="modalDp" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3>Catat DP</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body">
+        <form id="dpForm" class="form-grid">
+          <div class="field field-full"><label>Customer</label><select id="dpCustomer" class="select"></select></div>
+          <div class="field"><label>Total Belanja</label><div class="readonly" id="dpTotal">Rp0</div></div>
+          <div class="field"><label>Sudah Dibayar</label><div class="readonly" id="dpPaid">Rp0</div></div>
+          <div class="field"><label>DP (ribu rupiah)</label><input id="dpAmount" type="number" min="0" placeholder="40" /></div>
+          <div class="field"><label>Metode Pembayaran</label><select id="dpMethod" class="select"></select></div>
+          <div class="field field-full"><label class="auto">Sisa setelah DP: <strong id="dpRemaining">Rp0</strong></label></div>
+        </form>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveDp"><i class="fa-solid fa-check"></i> Simpan DP</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: PELUNASAN ===================== -->
+  <div class="modal" id="modalLunas" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3>Pelunasan</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body">
+        <form id="lunasForm" class="form-grid">
+          <div class="field field-full"><label>Customer</label><div class="readonly" id="lunasCustomer">—</div></div>
+          <div class="field"><label>Total</label><div class="readonly" id="lunasTotal">Rp0</div></div>
+          <div class="field"><label>Sisa</label><div class="readonly" id="lunasRemaining">Rp0</div></div>
+          <div class="field"><label>Nominal Pelunasan (ribu)</label><input id="lunasAmount" type="number" min="0" placeholder="125" /></div>
+          <div class="field"><label>Metode</label><select id="lunasMethod" class="select"></select></div>
+        </form>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveLunas"><i class="fa-solid fa-circle-check"></i> Lunasi</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: CHECKOUT ===================== -->
+  <div class="modal" id="modalCo" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3>Checkout Shopee</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body">
+        <form id="coForm" class="form-grid">
+          <div class="field"><label>Customer</label><div class="readonly" id="coCustomer">—</div></div>
+          <div class="field"><label>Barang</label><div class="readonly" id="coQty">0 pcs</div></div>
+          <div class="field"><label>Total</label><div class="readonly" id="coTotal">Rp0</div></div>
+          <div class="field"><label>Sisa</label><div class="readonly" id="coRemaining">Rp0</div></div>
+          <div class="field"><label>Nama Akun Shopee</label><input id="coShopee" placeholder="@sitishop123" /></div>
+          <div class="field"><label>Nama Penerima</label><input id="coReceiver" placeholder="Siti" /></div>
+          <div class="field"><label>Nomor Pesanan (opsional)</label><input id="coOrderNo" placeholder="2409..." /></div>
+          <div class="field"><label>Tanggal CO</label><input type="date" id="coDate" /></div>
+          <div class="field field-full" id="coWarnWrap" hidden><div class="warn" id="coWarn"></div></div>
+        </form>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveCo"><i class="fa-solid fa-bag-shopping"></i> Konfirmasi Checkout</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: DETAIL ===================== -->
+  <div class="modal" id="modalDetail" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3>Detail Transaksi</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body" id="detailBody"></div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Tutup</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: CONFIRM ===================== -->
+  <div class="modal" id="modalConfirm" hidden>
+    <div class="modal-card modal-sm">
+      <div class="modal-head"><h3 id="confirmTitle">Konfirmasi</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body"><p id="confirmMsg" class="confirm-msg"></p></div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-danger" id="confirmOk">Hapus</button></div>
+    </div>
+  </div>
+
+  <!-- ===================== WELCOME / DEMO ===================== -->
+  <div class="modal" id="modalWelcome" hidden>
+    <div class="modal-card modal-sm welcome">
+      <div class="modal-head"><h3>Selamat Datang 👋</h3></div>
+      <div class="modal-body">
+        <p>PAKEIN TRACKER siap mencatat hasil live kamu. Mulai dengan data contoh atau kosongkan.</p>
+      </div>
+      <div class="modal-foot foot-col">
+        <button class="btn btn-primary" id="welcomeDemo"><i class="fa-solid fa-wand-magic-sparkles"></i> Gunakan Demo Data</button>
+        <button class="btn btn-ghost" id="welcomeEmpty">Mulai Kosong</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
