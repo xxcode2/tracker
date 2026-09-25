@@ -187,7 +187,7 @@ function updateCloudUI() {
 }
 
 /* ---------------- Derived calculations ---------------- */
-// item.price stored in full rupiah; item.status: keep|final|batal
+// item.price stored in full rupiah; item.status: keep|batal (final dihapus; barang sudah CO bukan keep lagi)
 function txTotal(t) { return (t.items || []).filter(i => i.status !== 'batal').reduce((s, i) => s + (i.price || 0), 0); }
 function txQty(t) { return (t.items || []).filter(i => i.status !== 'batal').length; }
 function txPaidByKind(t, kind) { return (t.payments || []).filter(p => p.kind === kind).reduce((s, p) => s + (p.amount || 0), 0); }
@@ -316,17 +316,20 @@ function dashboardStats() {
   const coDone = txs.filter(t => t.checkoutStatus).length;
   const coPending = totalTx - coDone;
   const todayTx = txs.filter(t => t.date === today);
-  const keepItems = txs.reduce((s, t) => s + keepCountOf(t, 'keep'), 0);
-  const finalItems = txs.reduce((s, t) => s + keepCountOf(t, 'final'), 0);
+  const notCo = txs.filter(t => !t.checkoutStatus);
+  const keepItems = notCo.reduce((s, t) => s + keepCountOf(t, 'keep'), 0);
   const batalItems = txs.reduce((s, t) => s + keepCountOf(t, 'batal'), 0);
-  return { totalTx, totalPcs, totalValue, totalDp, totalLunas, outstanding, coDone, coPending, todayCount: todayTx.length, keepItems, finalItems, batalItems };
+  const hangusList = txs.filter(t => t.hangus);
+  const hangusCount = hangusList.length;
+  const hangusTotal = hangusList.reduce((s, t) => s + (t.hangusAmount || txPaidTotal(t)), 0);
+  return { totalTx, totalPcs, totalValue, totalDp, totalLunas, outstanding, coDone, coPending, todayCount: todayTx.length, keepItems, batalItems, hangusCount, hangusTotal };
 }
 
 function renderDashboard() {
   const s = dashboardStats();
   const cards = [
     { label: 'Total Customer', value: s.totalTx, sub: `+${s.todayCount} hari ini`, icon: 'fa-users', bg: 'linear-gradient(135deg,#a855f7,#ec4899)', cls: 'trend-up' },
-    { label: 'Total Baju', value: s.totalPcs, suffix: ' pcs', sub: `${s.finalItems} final · ${s.keepItems} keep`, icon: 'fa-shirt', bg: 'linear-gradient(135deg,#3b82f6,#22d3ee)' },
+    { label: 'Total Baju', value: s.totalPcs, suffix: ' pcs', sub: `${s.keepItems} masih di-keep`, icon: 'fa-shirt', bg: 'linear-gradient(135deg,#3b82f6,#22d3ee)' },
     { label: 'Total Nilai Barang', value: s.totalValue, money: true, sub: `${s.batalItems} barang batal`, icon: 'fa-sack-dollar', bg: 'linear-gradient(135deg,#f59e0b,#ef4444)' },
     { label: 'Total DP Masuk', value: s.totalDp, money: true, sub: 'Uang muka diterima', icon: 'fa-hand-holding-dollar', bg: 'linear-gradient(135deg,#22c55e,#14b8a6)' },
     { label: 'Total Pelunasan', value: s.totalLunas, money: true, sub: 'Pembayaran akhir', icon: 'fa-circle-check', bg: 'linear-gradient(135deg,#14b8a6,#3b82f6)' },
@@ -390,6 +393,7 @@ function renderMethodList() {
 }
 
 function statusBadge(t) {
+  if (t.hangus) return '<span class="badge b-red">DP HANGUS</span>';
   const st = txPaidStatus(t);
   const map = { 'LUNAS': 'b-green', 'DP SEBAGIAN': 'b-yellow', 'BELUM DP': 'b-red' };
   const co = t.checkoutStatus ? '<span class="badge b-green">SUDAH CO</span>' : '';
@@ -476,8 +480,8 @@ function matchStatus(t, f) {
     case 'sudah-dp': return txPaidTotal(t) > 0;
     case 'belum-lunas': return st !== 'LUNAS';
     case 'lunas': return st === 'LUNAS';
-    case 'keep': return keepCountOf(t, 'keep') > 0;
-    case 'final': return keepCountOf(t, 'final') > 0;
+    case 'keep': return keepCountOf(t, 'keep') > 0 && !t.checkoutStatus;
+    case 'hangus': return !!t.hangus;
     case 'belum-co': return !t.checkoutStatus;
     case 'sudah-co': return !!t.checkoutStatus;
     default: return true;
@@ -503,9 +507,9 @@ function currentDateFilter() {
   return { mode };
 }
 function keepBadge(t) {
+  if (t.checkoutStatus) return '<span class="badge b-green">SUDAH CO</span>';
   const parts = [];
-  const k = keepCountOf(t, 'keep'), f = keepCountOf(t, 'final'), b = keepCountOf(t, 'batal');
-  if (f) parts.push(`<span class="badge b-green">${f} Final</span>`);
+  const k = keepCountOf(t, 'keep'), b = keepCountOf(t, 'batal');
   if (k) parts.push(`<span class="badge b-keep">${k} Keep</span>`);
   if (b) parts.push(`<span class="badge b-batal">${b} Batal</span>`);
   return parts.join(' ') || '<span class="badge b-muted">-</span>';
@@ -558,7 +562,7 @@ function renderTransactions() {
 /* ---- Item row template (dynamic): hanya harga + status ---- */
 function itemRowHTML(item = {}) {
   const it = Object.assign({ price: 0, status: 'keep' }, item);
-  const statusOpts = ['keep', 'final', 'batal'].map(s => `<option value="${s}" ${it.status === s ? 'selected' : ''}>${s === 'keep' ? '🟡 Keep' : s === 'final' ? '🟢 Final' : '🔴 Batal'}</option>`).join('');
+  const statusOpts = ['keep', 'batal'].map(s => `<option value="${s}" ${it.status === s ? 'selected' : ''}>${s === 'keep' ? '🟡 Keep' : '🔴 Batal'}</option>`).join('');
   return `<div class="item-row">
     <span class="item-no"><i class="fa-solid fa-shirt"></i></span>
     <input class="item-price" type="number" min="0" step="0.5" placeholder="Harga (ribu)" value="${it.price ? fmtK(it.price) : ''}" />
@@ -639,7 +643,7 @@ function saveTxFromForm() {
 function showDetail(id) {
   const t = getTx(id); if (!t) return;
   const payments = (t.payments || []).map(p => `<div class="tc-line"><span><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span> ${esc(p.method)} · ${fmtDate(p.date)}</span><strong>${fmtRp(p.amount)}</strong></div>`).join('') || '<p class="stat-sub">Belum ada pembayaran.</p>';
-  const items = (t.items || []).map((i, idx) => `<div class="tc-line"><span>Barang ${idx + 1}</span><strong>${fmtRp(i.price)} <span class="badge ${i.status === 'final' ? 'b-green' : i.status === 'batal' ? 'b-batal' : 'b-keep'}">${i.status}</span></strong></div>`).join('');
+  const items = (t.items || []).map((i, idx) => `<div class="tc-line"><span>Barang ${idx + 1}</span><strong>${fmtRp(i.price)} <span class="badge ${i.status === 'batal' ? 'b-batal' : 'b-keep'}">${i.status}</span></strong></div>`).join('');
   $('#detailBody').innerHTML = `
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
       <div class="avatar" style="width:52px;height:52px;font-size:20px;background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
@@ -810,13 +814,15 @@ function renderKeep() {
   const s = dashboardStats();
   $('#keepStats').innerHTML = [
     { k: 'Barang KEEP', v: s.keepItems },
-    { k: 'Barang FINAL', v: s.finalItems },
     { k: 'Barang BATAL', v: s.batalItems },
+    { k: 'DP Hangus', v: s.hangusCount + ' trx' },
+    { k: 'Uang DP Hangus', v: fmtRp(s.hangusTotal) },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
   const q = ($('#keepSearch') && $('#keepSearch').value || '').toLowerCase();
   const f = ($('#keepStatusFilter') && $('#keepStatusFilter').value) || 'all';
   const groups = [];
   TRANSACTIONS.forEach(t => {
+    if (t.checkoutStatus) return; // sudah CO = barang dikirim, bukan keep lagi
     if (q && !(String(t.customerName || '').toLowerCase().includes(q))) return;
     const items = [];
     (t.items || []).forEach((i, idx) => {
@@ -825,18 +831,18 @@ function renderKeep() {
     });
     if (!items.length) return;
     const k = items.filter(x => x.i.status === 'keep').length;
-    const fi = items.filter(x => x.i.status === 'final').length;
     const ba = items.filter(x => x.i.status === 'batal').length;
     const gTotal = items.filter(x => x.i.status !== 'batal').reduce((sum, x) => sum + (x.i.price || 0), 0);
-    groups.push({ t, items, k, fi, ba, gTotal });
+    groups.push({ t, items, k, ba, gTotal });
   });
   const pg = slicePage(groups, 'keep');
   $('#keepList').innerHTML = groups.length ? pg.items.map(g => `
     <div class="keep-group">
       <div class="kg-head">
         <div class="avatar" style="background:${avatarColor(g.t.customerName)}">${esc(initials(g.t.customerName))}</div>
-        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${fmtDate(g.t.date)} · ${g.items.length} barang</span></div>
-        <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.fi ? `<span class="badge b-green">${g.fi} Final</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
+        <div class="kg-name"><strong>${esc(g.t.customerName)}</strong><span>${fmtDate(g.t.date)} · ${g.items.length} barang${g.t.hangus ? ' · ⚠️ hangus' : ''}</span></div>
+        ${(txPaidTotal(g.t) > 0 && !g.t.hangus) ? `<button class="kg-hangus" data-act="hangus" data-id="${g.t.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk"><i class="fa-solid fa-fire"></i> DP Hangus</button>` : ''}
+        <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
       </div>
       <div class="kg-items">
         ${g.items.map(({ i, idx }) => `
@@ -845,7 +851,6 @@ function renderKeep() {
           <span class="ki-price">${fmtRp(i.price)}</span>
           <div class="seg">
             <button class="${i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${g.t.id}" data-idx="${idx}">KEEP</button>
-            <button class="${i.status === 'final' ? 'on-final' : ''}" data-item-status="final" data-id="${g.t.id}" data-idx="${idx}">FINAL</button>
             <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${g.t.id}" data-idx="${idx}">BATAL</button>
           </div>
         </div>`).join('')}
@@ -977,7 +982,7 @@ function renderAnalytics() {
   $('#analyticsStats').innerHTML = [
     { k: 'Total Omzet', v: fmtRp(totalValue) }, { k: 'Total DP', v: fmtRp(totalDp) },
     { k: 'Total Pelunasan', v: fmtRp(totalLunas) }, { k: 'Outstanding', v: fmtRp(outstanding) },
-    { k: 'Avg Order Value', v: fmtRp(totalValue / n) }, { k: 'Avg Item/Customer', v: (totalPcs / n).toFixed(1) },
+    { k: 'Avg Order Value', v: fmtRp(totalValue / n) }, { k: 'Rata² Harga/Barang', v: fmtRp(totalPcs ? totalValue / totalPcs : 0) }, { k: 'Avg Item/Customer', v: (totalPcs / n).toFixed(1) },
     { k: 'Total Customer', v: custCount }, { k: 'Total Transaksi', v: txs.length },
     { k: 'Total Pcs', v: totalPcs }, { k: 'Sudah CO', v: coDone }, { k: 'Belum CO', v: txs.length - coDone },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
@@ -1057,6 +1062,7 @@ function renderLive() {
         <button class="la-cancel" data-act="live-cancel" data-id="${t.id}"><i class="fa-solid fa-ban"></i>CANCEL</button>
         <button class="la-lunas" data-act="lunas" data-id="${t.id}"><i class="fa-solid fa-circle-check"></i>LUNAS</button>
         <button class="la-co" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i>CO</button>
+        ${txPaidTotal(t) > 0 ? `<button class="la-hangus" data-act="hangus" data-id="${t.id}"><i class="fa-solid fa-fire"></i>HANGUS</button>` : ''}
       </div>
     </div>`).join('') + pagerHTML('live', pg.page, pg.pages, pg.total) : emptyState('Semua transaksi selesai 🎉', 'Tidak ada transaksi aktif yang belum checkout.');
 }
@@ -1064,7 +1070,15 @@ function liveSetAll(txId, status) {
   const t = getTx(txId); if (!t) return;
   t.items.forEach(i => i.status = status);
   saveTx(); renderAll();
-  toast(status === 'final' ? `${t.customerName}: semua barang FINAL` : `${t.customerName}: transaksi dibatalkan`, status === 'final' ? 'success' : 'warn');
+  toast(status === 'batal' ? `${t.customerName}: transaksi dibatalkan` : `${t.customerName}: barang di-keep`, status === 'batal' ? 'warn' : 'success');
+}
+function markHangus(txId) {
+  const t = getTx(txId); if (!t) return;
+  confirmDialog('DP Hangus', `Tandai DP ${t.customerName} HANGUS? Uang DP tetap masuk ke kantongmu (${fmtRp(txPaidTotal(t))}), barang kembali dijual & keluar dari daftar Keep.`, 'Ya, Hanguskan', () => {
+    t.items.forEach(i => i.status = 'batal');
+    t.hangus = true; t.hangusAt = Date.now(); t.hangusAmount = txPaidTotal(t);
+    saveTx(); renderAll(); toast('DP ditandai hangus — uang tetap masuk, barang kembali dijual', 'warn');
+  });
 }
 
 /* =========================================================
@@ -1091,7 +1105,7 @@ function exportCSV() {
 function exportJSON() { download('pakein-tracker-' + todayStr() + '.json', JSON.stringify(TRANSACTIONS, null, 2), 'application/json'); toast('Export JSON berhasil', 'success'); }
 function backup() { const data = { app: 'PAKEIN TRACKER', version: 1, exportedAt: new Date().toISOString(), transactions: TRANSACTIONS, settings: SETTINGS }; download('pakein-backup-' + todayStr() + '.json', JSON.stringify(data, null, 2), 'application/json'); toast('Backup berhasil diunduh', 'success'); }
 function normalizeTx(t) {
-  return { id: t.id || uid(), customerName: t.customerName || 'Tanpa Nama', tiktokUsername: t.tiktokUsername || '', date: t.date || todayStr(), items: (t.items || []).map(i => ({ price: i.price || 0, status: i.status || 'keep' })), payments: t.payments || [], checkoutStatus: !!t.checkoutStatus, shopeeUsername: t.shopeeUsername || '', shopeeOrderNumber: t.shopeeOrderNumber || '', checkoutDate: t.checkoutDate || '', createdAt: t.createdAt || Date.now() };
+  return { id: t.id || uid(), customerName: t.customerName || 'Tanpa Nama', tiktokUsername: t.tiktokUsername || '', date: t.date || todayStr(), items: (t.items || []).map(i => ({ price: i.price || 0, status: i.status === 'final' ? 'keep' : (i.status || 'keep') })), payments: t.payments || [], checkoutStatus: !!t.checkoutStatus, shopeeUsername: t.shopeeUsername || '', shopeeOrderNumber: t.shopeeOrderNumber || '', checkoutDate: t.checkoutDate || '', hangus: !!t.hangus, hangusAmount: t.hangusAmount || 0, createdAt: t.createdAt || Date.now() };
 }
 function ingestTransactions(arr) {
   if (!Array.isArray(arr) || !arr.length) { toast('File tidak valid / kosong', 'error'); return; }
@@ -1128,7 +1142,8 @@ function demoData() {
   const t = todayStr();
   const dd = (n) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() - n); return isoDate(d); };
   const mk = (name, tt, date, items, payments, co) => {
-    const tr = normalizeTx({ customerName: name, tiktokUsername: tt, date, items, payments, createdAt: new Date(date + 'T12:00:00').getTime() });
+    const its = items.map(i => ({ price: i.price, status: i.status === 'final' ? 'keep' : i.status }));
+    const tr = normalizeTx({ customerName: name, tiktokUsername: tt, date, items: its, payments, createdAt: new Date(date + 'T12:00:00').getTime() });
     if (co) { tr.checkoutStatus = true; tr.shopeeUsername = co.shopee; tr.shopeeOrderNumber = co.no; tr.checkoutDate = co.date; }
     return tr;
   };
@@ -1222,8 +1237,9 @@ function handleAct(act, el) {
     case 'co': openCoModal(id); break;
     case 'lunas': openLunasModal(id); break;
     case 'add-dp': openDpModal(id); break;
-    case 'live-keep': liveSetAll(id, 'final'); break;
+    case 'live-keep': liveSetAll(id, 'keep'); break;
     case 'live-cancel': confirmDialog('Batalkan Transaksi', `Batalkan semua barang untuk ${getTx(id)?.customerName || ''}?`, 'Batalkan', () => liveSetAll(id, 'batal')); break;
+    case 'hangus': markHangus(id); break;
   }
 }
 function wireEvents() {
