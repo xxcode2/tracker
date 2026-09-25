@@ -395,6 +395,36 @@ function statusBadge(t) {
   const co = t.checkoutStatus ? '<span class="badge b-green">SUDAH CO</span>' : '';
   return `<span class="badge ${map[st]}">${st}</span>${co}`;
 }
+/* ---- Generic pagination (10 per page) ---- */
+const PAGE_SIZE = 10;
+const PAGE_STATE = {};
+function slicePage(list, key) {
+  const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  let page = PAGE_STATE[key] || 1;
+  if (page > pages) page = pages;
+  if (page < 1) page = 1;
+  PAGE_STATE[key] = page;
+  const from = (page - 1) * PAGE_SIZE;
+  return { items: list.slice(from, from + PAGE_SIZE), page, pages, total: list.length };
+}
+function pagerHTML(key, page, pages, total) {
+  if (!total) return '';
+  const start = (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(total, page * PAGE_SIZE);
+  const btn = (p, label, cls = '', dis = false) =>
+    `<button class="pg-btn ${cls}" ${dis ? 'disabled' : `data-action="goto-page" data-page-key="${key}" data-page="${p}"`}>${label}</button>`;
+  let nums = '';
+  const win = 2, lo = Math.max(1, page - win), hi = Math.min(pages, page + win);
+  if (lo > 1) nums += btn(1, '1') + (lo > 2 ? '<span class="pg-gap">…</span>' : '');
+  for (let p = lo; p <= hi; p++) nums += btn(p, String(p), p === page ? 'active' : '');
+  if (hi < pages) nums += (hi < pages - 1 ? '<span class="pg-gap">…</span>' : '') + btn(pages, String(pages));
+  return `<div class="pager">
+    <span class="pg-info">Tampil ${start}–${end} dari ${total}</span>
+    <div class="pg-btns">${btn(page - 1, '<i class="fa-solid fa-chevron-left"></i>', '', page <= 1)}${nums}${btn(page + 1, '<i class="fa-solid fa-chevron-right"></i>', '', page >= pages)}</div>
+  </div>`;
+}
+function resetPage(key) { PAGE_STATE[key] = 1; }
+
 function renderRecent() {
   const list = [...TRANSACTIONS].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 10);
   if (!list.length) { $('#recentGrid').innerHTML = emptyState('Belum ada transaksi', 'Mulai catat hasil live kamu hari ini.', 'add-tx'); return; }
@@ -481,14 +511,15 @@ function keepBadge(t) {
   return parts.join(' ') || '<span class="badge b-muted">-</span>';
 }
 function renderTransactions() {
-  const list = filteredTx();
+  const all = filteredTx();
   const body = $('#txBody'), mobile = $('#txMobileCards'), empty = $('#txEmpty');
-  if (!list.length) {
+  if (!all.length) {
     body.innerHTML = ''; mobile.innerHTML = '';
     empty.hidden = false; empty.innerHTML = emptyState(TRANSACTIONS.length ? 'Tidak ada hasil' : 'Belum ada transaksi', TRANSACTIONS.length ? 'Coba ubah pencarian / filter.' : 'Mulai catat hasil live kamu hari ini.', 'add-tx');
     return;
   }
   empty.hidden = true;
+  const pg = slicePage(all, 'tx'); const list = pg.items;
   body.innerHTML = list.map(t => `
     <tr>
       <td>${fmtDate(t.date)}</td>
@@ -508,7 +539,7 @@ function renderTransactions() {
         <button class="mini-btn co" data-act="co" data-id="${t.id}" title="Checkout"><i class="fa-solid fa-bag-shopping"></i></button>
         <button class="mini-btn del" data-act="del" data-id="${t.id}" title="Hapus"><i class="fa-solid fa-trash"></i></button>
       </div></td>
-    </tr>`).join('');
+    </tr>`).join('') + `<tr class="pager-tr"><td colspan="12">${pagerHTML('tx', pg.page, pg.pages, pg.total)}</td></tr>`;
   mobile.innerHTML = list.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
@@ -522,7 +553,7 @@ function renderTransactions() {
         <button class="mini-btn co" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i></button>
         <button class="mini-btn del" data-act="del" data-id="${t.id}"><i class="fa-solid fa-trash"></i></button>
       </div>
-    </div>`).join('');
+    </div>`).join('') + pagerHTML('tx', pg.page, pg.pages, pg.total);
 }
 
 /* ---- Item row template (dynamic): hanya harga + status ---- */
@@ -765,11 +796,12 @@ function renderDP() {
   const rows = [];
   TRANSACTIONS.forEach(t => (t.payments || []).forEach(p => rows.push({ t, p })));
   rows.sort((a, b) => (b.p.at || 0) - (a.p.at || 0));
-  $('#paymentHistory').innerHTML = rows.length ? rows.map(({ t, p }) => `
+  const pgD = slicePage(rows, 'dp');
+  $('#paymentHistory').innerHTML = rows.length ? pgD.items.map(({ t, p }) => `
     <tr><td>${fmtDate(p.date)}</td><td>${esc(t.customerName)}</td>
       <td><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span></td>
       <td><strong>${fmtRp(p.amount)}</strong></td>
-      <td><span class="cust-cell"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span></td></tr>`).join('')
+      <td><span class="cust-cell"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span></td></tr>`).join('') + `<tr class="pager-tr"><td colspan="5">${pagerHTML('dp', pgD.page, pgD.pages, pgD.total)}</td></tr>`
     : `<tr><td colspan="5" style="text-align:center;color:var(--muted)">Belum ada pembayaran.</td></tr>`;
 }
 
@@ -786,7 +818,8 @@ function renderKeep() {
   const items = [];
   TRANSACTIONS.forEach(t => (t.items || []).forEach((i, idx) => items.push({ t, i, idx })));
   const list = items.filter(x => x.i.status !== 'batal');
-  $('#keepList').innerHTML = list.length ? list.map(({ t, i, idx }) => `
+  const pg = slicePage(list, 'keep');
+  $('#keepList').innerHTML = list.length ? pg.items.map(({ t, i, idx }) => `
     <div class="keep-row">
       <div class="avatar" style="background:${avatarColor(t.customerName)};width:38px;height:38px;font-size:14px">${esc(initials(t.customerName))}</div>
       <div class="k-main"><strong>Barang ${idx + 1}</strong>
@@ -796,7 +829,7 @@ function renderKeep() {
         <button class="${i.status === 'final' ? 'on-final' : ''}" data-item-status="final" data-id="${t.id}" data-idx="${idx}">FINAL</button>
         <button class="${i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${t.id}" data-idx="${idx}">BATAL</button>
       </div>
-    </div>`).join('') : emptyState('Belum ada barang di-keep', 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
+    </div>`).join('') + pagerHTML('keep', pg.page, pg.pages, pg.total) : emptyState('Belum ada barang di-keep', 'Tambahkan transaksi untuk melihat barang yang di-keep.', 'add-tx');
 }
 function setItemStatus(txId, idx, status) {
   const t = getTx(txId); if (!t || !t.items[idx]) return;
@@ -816,7 +849,8 @@ function renderPelunasan() {
     { k: 'Total Outstanding', v: fmtRp(outstanding) },
     { k: 'Sudah Lunas', v: TRANSACTIONS.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
-  $('#pelunasanList').innerHTML = list.length ? list.map(t => `
+  const pg = slicePage(list, 'pelunasan');
+  $('#pelunasanList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
         <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtDate(t.date)}</span></div></div>
@@ -825,7 +859,7 @@ function renderPelunasan() {
       <div class="tc-line"><span>Sisa</span><strong class="trend-down">${fmtRp(txRemaining(t))}</strong></div>
       <div class="tc-foot">${statusBadge(t)}</div>
       <button class="btn btn-primary" data-act="lunas" data-id="${t.id}"><i class="fa-solid fa-circle-check"></i> LUNASI</button>
-    </div>`).join('') : emptyState('Semua sudah lunas 🎉', 'Tidak ada transaksi yang menunggu pelunasan.');
+    </div>`).join('') + pagerHTML('pelunasan', pg.page, pg.pages, pg.total) : emptyState('Semua sudah lunas 🎉', 'Tidak ada transaksi yang menunggu pelunasan.');
 }
 
 /* =========================================================
@@ -847,7 +881,8 @@ function renderCheckout() {
     </div>`;
   requestAnimationFrame(() => { const b = $('#coProgressPanel .big-bar > i'); if (b) b.style.width = b.dataset.w + '%'; });
   const list = TRANSACTIONS.filter(t => txTotal(t) > 0);
-  $('#coList').innerHTML = list.length ? list.map(t => `
+  const pg = slicePage(list, 'co');
+  $('#coList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
         <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span></div></div>
@@ -859,7 +894,7 @@ function renderCheckout() {
         <div class="tc-line"><span>Sisa</span><strong class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</strong></div>
         <div class="tc-foot">${statusBadge(t)}</div>
         <button class="btn ${txRemaining(t) > 0 ? 'btn-ghost' : 'btn-primary'}" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i> CO SEKARANG</button>`}
-    </div>`).join('') : emptyState('Belum ada transaksi', 'Data checkout akan muncul di sini.');
+    </div>`).join('') + pagerHTML('co', pg.page, pg.pages, pg.total) : emptyState('Belum ada transaksi', 'Data checkout akan muncul di sini.');
 }
 
 /* =========================================================
@@ -882,7 +917,8 @@ function renderCustomers() {
   const q = ($('#custSearch').value || '').toLowerCase();
   let list = customerAgg().filter(c => !q || c.name.toLowerCase().includes(q) || c.tiktok.toLowerCase().includes(q));
   list.sort((a, b) => b.value - a.value);
-  $('#custGrid').innerHTML = list.length ? list.map(c => `
+  const pg = slicePage(list, 'cust');
+  $('#custGrid').innerHTML = list.length ? pg.items.map(c => `
     <div class="cust-card">
       <div class="avatar" style="background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
       <strong>${esc(c.name)}</strong>
@@ -893,7 +929,7 @@ function renderCustomers() {
         <div><span>Total Belanja</span><strong>${fmtRp(c.value)}</strong></div>
         <div><span>Checkout</span><strong>${c.co}/${c.orders}</strong></div>
       </div>
-    </div>`).join('') : emptyState('Belum ada customer', 'Data customer muncul otomatis dari transaksi.', 'add-tx');
+    </div>`).join('') + pagerHTML('cust', pg.page, pg.pages, pg.total) : emptyState('Belum ada customer', 'Data customer muncul otomatis dari transaksi.', 'add-tx');
 }
 
 /* =========================================================
@@ -987,7 +1023,8 @@ function renderLive() {
   let list = TRANSACTIONS.filter(t => txTotal(t) > 0 && !(t.checkoutStatus));
   if (q) list = list.filter(t => t.customerName.toLowerCase().includes(q));
   list.sort((a, b) => txRemaining(b) - txRemaining(a));
-  $('#liveList').innerHTML = list.length ? list.map(t => `
+  const pg = slicePage(list, 'live');
+  $('#liveList').innerHTML = list.length ? pg.items.map(t => `
     <div class="live-card">
       <div class="lc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
         <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${esc(t.tiktokUsername || '')}</span></div></div>
@@ -1001,7 +1038,7 @@ function renderLive() {
         <button class="la-lunas" data-act="lunas" data-id="${t.id}"><i class="fa-solid fa-circle-check"></i>LUNAS</button>
         <button class="la-co" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i>CO</button>
       </div>
-    </div>`).join('') : emptyState('Semua transaksi selesai 🎉', 'Tidak ada transaksi aktif yang belum checkout.');
+    </div>`).join('') + pagerHTML('live', pg.page, pg.pages, pg.total) : emptyState('Semua transaksi selesai 🎉', 'Tidak ada transaksi aktif yang belum checkout.');
 }
 function liveSetAll(txId, status) {
   const t = getTx(txId); if (!t) return;
@@ -1100,6 +1137,34 @@ function demoData() {
     mk('Nadia', '@ndia', t, [
       { price: 70000, status: 'keep' }],
       []),
+    mk('Dewi', '@dewii', dd(1), [
+      { price: 90000, status: 'final' },
+      { price: 30000, status: 'final' }],
+      [P('dp', 50000, 'ShopeePay'), P('pelunasan', 70000, 'QRIS')], { shopee: '@dewisore', no: '2409B2', date: dd(1) }),
+    mk('Bagus', '@bagusstore', dd(1), [
+      { price: 120000, status: 'final' }],
+      [P('pelunasan', 120000, 'Transfer Bank')], { shopee: '@baguss', no: '2409B3', date: dd(1) }),
+    mk('Indah', '@indahh', dd(4), [
+      { price: 55000, status: 'keep' },
+      { price: 45000, status: 'final' }],
+      [P('dp', 40000, 'DANA')]),
+    mk('Tomi', '@tomi.gudang', dd(5), [
+      { price: 200000, status: 'final' },
+      { price: 80000, status: 'final' }],
+      [P('dp', 100000, 'Transfer Bank'), P('pelunasan', 180000, 'Transfer Bank')], { shopee: '@tomishop', no: '2409T9', date: dd(4) }),
+    mk('Cici', '@cici.cute', dd(6), [
+      { price: 35000, status: 'batal' }],
+      []),
+    mk('Riko', '@rikoo', dd(7), [
+      { price: 150000, status: 'final' }],
+      [P('dp', 75000, 'QRIS')]),
+    mk('Lala', '@lalashop', dd(8), [
+      { price: 65000, status: 'final' },
+      { price: 25000, status: 'keep' }],
+      [P('dp', 30000, 'ShopeePay')]),
+    mk('Yoga', '@yoga.fit', dd(9), [
+      { price: 110000, status: 'final' }],
+      [P('pelunasan', 110000, 'DANA')], { shopee: '@yogastore', no: '2409Y1', date: dd(8) }),
   ];
 }
 
@@ -1125,6 +1190,7 @@ function handleAction(action, el) {
     case 'cloud-sync': cloudSyncNow(); break;
     case 'cloud-push': if (!CLOUD.available) { toast('Cloud belum tersedia / offline', 'warn'); break; } pushCloud(); toast('Mengirim data ke cloud…', 'info'); break;
     case 'cloud-pull': pullCloud({ silent: false }); break;
+    case 'goto-page': { const k = el.dataset.pageKey, p = +el.dataset.page; if (k && p >= 1) { PAGE_STATE[k] = p; renderAll(); } break; }
   }
 }
 function handleAct(act, el) {
@@ -1179,14 +1245,14 @@ function wireEvents() {
   // confirm dialog
   $('#confirmOk').addEventListener('click', () => { closeModal('#modalConfirm'); if (confirmCb) { const c = confirmCb; confirmCb = null; c(); } });
 
-  // filters / search
-  $('#txSearch').addEventListener('input', renderTransactions);
-  $('#txStatusFilter').addEventListener('change', renderTransactions);
-  $('#txDateFilter').addEventListener('change', e => { $('#customRange').hidden = e.target.value !== 'custom'; renderTransactions(); });
-  $('#txFrom').addEventListener('change', renderTransactions);
-  $('#txTo').addEventListener('change', renderTransactions);
-  $('#custSearch').addEventListener('input', renderCustomers);
-  $('#liveSearch').addEventListener('input', renderLive);
+  // filters / search (reset ke halaman 1 saat berubah)
+  $('#txSearch').addEventListener('input', () => { resetPage('tx'); renderTransactions(); });
+  $('#txStatusFilter').addEventListener('change', () => { resetPage('tx'); renderTransactions(); });
+  $('#txDateFilter').addEventListener('change', e => { $('#customRange').hidden = e.target.value !== 'custom'; resetPage('tx'); renderTransactions(); });
+  $('#txFrom').addEventListener('change', () => { resetPage('tx'); renderTransactions(); });
+  $('#txTo').addEventListener('change', () => { resetPage('tx'); renderTransactions(); });
+  $('#custSearch').addEventListener('input', () => { resetPage('cust'); renderCustomers(); });
+  $('#liveSearch').addEventListener('input', () => { resetPage('live'); renderLive(); });
 
   // file inputs
   $('#importFile').addEventListener('change', e => readFileJSON(e.target, data => ingestTransactions(Array.isArray(data) ? data : data.transactions)));
