@@ -65,6 +65,7 @@
             <strong id="headerClock">--:--:--</strong>
           </div>
           <div class="sys-status"><span class="dot"></span> SYSTEM READY</div>
+          <button class="cloud-chip" id="cloudChip" title="Klik untuk sinkron sekarang"><i class="fa-solid fa-cloud"></i><span>Offline</span></button>
           <button class="theme-toggle" id="themeToggleTop" title="Ganti tema"><i class="fa-solid fa-moon"></i></button>
         </div>
       </header>
@@ -264,6 +265,21 @@
                 </div>
                 <button class="btn btn-ghost" data-action="toggle-theme"><i class="fa-solid fa-moon"></i> Ganti Dark / Light</button>
               </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-cloud-arrow-up"></i> Sinkron Cloud (JSONBin + Vercel)</h3></div>
+            <div class="cloud-panel">
+              <div class="cloud-status" id="cloudStatus">
+                <div class="cs-ico"><i class="fa-solid fa-cloud"></i></div>
+                <div class="cs-info"><strong id="cloudState">Mengecek…</strong><span id="cloudNote">Sedang menghubungi server.</span></div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-primary" data-action="cloud-sync"><i class="fa-solid fa-rotate"></i> Sync Sekarang</button>
+                <button class="btn btn-ghost" data-action="cloud-push"><i class="fa-solid fa-cloud-arrow-up"></i> Kirim Data ke Cloud</button>
+                <button class="btn btn-ghost" data-action="cloud-pull"><i class="fa-solid fa-cloud-arrow-down"></i> Tarik dari Cloud</button>
+              </div>
+              <p class="hint">Data disimpan di JSONBin dan diakses lewat serverless function Vercel (`/api/data`) supaya API key tetap aman. Auto-sync tiap 45 detik saat aplikasi terbuka.</p>
             </div>
           </div>
         </section>

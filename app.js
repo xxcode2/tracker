@@ -63,16 +63,128 @@ const METHOD_NAMES = Object.keys(METHODS);
 const KEY_TX = 'pakein.transactions';
 const KEY_SET = 'pakein.settings';
 const KEY_THEME = 'pakein.theme';
+const KEY_META = 'pakein.meta';
+const API_URL = '/api/data';
+const CLOUD_POLL_MS = 45000;
 
 let TRANSACTIONS = [];
 let SETTINGS = { defaultMethod: 'QRIS', onboarded: false };
+// Cloud sync state
+let CLOUD = { available: false, updatedAt: 0, timer: null, poll: null, state: 'offline' };
 
 function loadState() {
   try { TRANSACTIONS = JSON.parse(localStorage.getItem(KEY_TX)) || []; } catch { TRANSACTIONS = []; }
   try { SETTINGS = Object.assign(SETTINGS, JSON.parse(localStorage.getItem(KEY_SET)) || {}); } catch {}
+  try { CLOUD.updatedAt = (JSON.parse(localStorage.getItem(KEY_META) || '{}').updatedAt) || 0; } catch { CLOUD.updatedAt = 0; }
 }
-function saveTx() { localStorage.setItem(KEY_TX, JSON.stringify(TRANSACTIONS)); }
+function saveTx() { localStorage.setItem(KEY_TX, JSON.stringify(TRANSACTIONS)); markLocalChange(); }
 function saveSettings() { localStorage.setItem(KEY_SET, JSON.stringify(SETTINGS)); }
+
+/* =========================================================
+   CLOUD SYNC (JSONBin via Vercel serverless proxy at /api/data)
+   Model: 1 Bin = { updatedAt, transactions[] }. Single user,
+   pull-if-newer + push-on-change. LocalStorage tetap jadi cache.
+   ========================================================= */
+async function cloudGET() {
+  try {
+    const res = await fetch(API_URL, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return null; // mis. belum di-deploy / file://
+    const j = await res.json();
+    if (j && j.notConfigured) return null;
+    return j;
+  } catch { return null; }
+}
+async function cloudPUT(payload) {
+  try {
+    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    return res.ok;
+  } catch { return false; }
+}
+function writeLocalTx() { localStorage.setItem(KEY_TX, JSON.stringify(TRANSACTIONS)); }
+function bumpTimestamp() { CLOUD.updatedAt = Date.now(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt })); }
+function markLocalChange() {
+  bumpTimestamp();
+  if (CLOUD.available) scheduleCloudPush();
+}
+function scheduleCloudPush(delay = 900) {
+  clearTimeout(CLOUD.timer);
+  CLOUD.timer = setTimeout(pushCloud, delay);
+}
+async function pushCloud() {
+  if (!CLOUD.available) return;
+  setCloudState('syncing');
+  const ok = await cloudPUT({ updatedAt: CLOUD.updatedAt, transactions: TRANSACTIONS });
+  setCloudState(ok ? 'online' : 'error');
+  if (ok && currentView === 'pengaturan') renderSettings();
+}
+async function pullCloud({ silent = true } = {}) {
+  const g = await cloudGET();
+  if (!g) { CLOUD.available = false; setCloudState('offline'); return false; }
+  CLOUD.available = true;
+  if ((g.updatedAt || 0) > CLOUD.updatedAt) {
+    TRANSACTIONS = Array.isArray(g.transactions) ? g.transactions.map(normalizeTx) : [];
+    CLOUD.updatedAt = g.updatedAt || 0;
+    writeLocalTx(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt }));
+    renderAll();
+    setCloudState('online');
+    if (!silent) toast('Data terbaru ditarik dari cloud ☁️', 'info');
+  } else {
+    setCloudState('online');
+  }
+  return true;
+}
+// manual "Sync Sekarang": tarik dulu (kalau remote lebih baru), lalu dorong lokal ke remote
+async function cloudSyncNow() {
+  setCloudState('syncing');
+  await pullCloud({ silent: true });
+  if (!CLOUD.available) { toast('Cloud belum tersedia / offline', 'warn'); setCloudState('offline'); return; }
+  await pushCloud();
+  toast('Sinkronisasi selesai ✓', 'success');
+}
+function startPolling() {
+  if (CLOUD.poll) clearInterval(CLOUD.poll);
+  CLOUD.poll = setInterval(() => { if (!document.hidden && CLOUD.available) pullCloud({ silent: true }); }, CLOUD_POLL_MS);
+}
+async function initCloud() {
+  const g = await cloudGET();
+  if (!g) { CLOUD.available = false; setCloudState('offline'); return; }
+  CLOUD.available = true;
+  if ((g.updatedAt || 0) > CLOUD.updatedAt) {
+    TRANSACTIONS = Array.isArray(g.transactions) ? g.transactions.map(normalizeTx) : [];
+    CLOUD.updatedAt = g.updatedAt || 0;
+    writeLocalTx(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt }));
+    renderAll();
+  } else if (Array.isArray(g.transactions) && g.transactions.length === 0 && TRANSACTIONS.length > 0) {
+    // cloud masih kosong tapi lokal sudah ada data -> seed naik
+    await pushCloud();
+  }
+  setCloudState('online');
+  startPolling();
+}
+function setCloudState(state) {
+  CLOUD.state = state;
+  updateCloudUI();
+}
+function updateCloudUI() {
+  const chip = $('#cloudChip');
+  const stateMap = {
+    online: { t: CLOUD.updatedAt ? 'Synced' : 'Online', n: 'Tersambung ke cloud.', cls: 'state-online' },
+    offline: { t: 'Offline', n: 'Data disimpan lokal di perangkat ini.', cls: 'state-offline' },
+    syncing: { t: 'Syncing…', n: 'Menyinkronkan data…', cls: 'state-syncing' },
+    error: { t: 'Error', n: 'Gagal terhubung ke cloud.', cls: 'state-error' },
+  };
+  const s = stateMap[CLOUD.state] || stateMap.offline;
+  if (chip) {
+    chip.className = 'cloud-chip ' + s.cls;
+    const lbl = chip.querySelector('span'); if (lbl) lbl.textContent = s.t;
+    const ico = chip.querySelector('i'); if (ico) ico.className = 'fa-solid ' + (CLOUD.state === 'syncing' ? 'fa-arrows-rotate' : CLOUD.state === 'error' ? 'fa-triangle-exclamation' : 'fa-cloud');
+  }
+  const st = $('#cloudState'), note = $('#cloudNote');
+  if (st) st.textContent = s.t;
+  if (note) note.textContent = CLOUD.state === 'online' && CLOUD.updatedAt ? ('Sinkron terakhir: ' + new Date(CLOUD.updatedAt).toLocaleString('id-ID')) : s.n;
+}
 
 /* ---------------- Derived calculations ---------------- */
 // item.price stored in full rupiah; item.status: keep|final|batal
@@ -890,6 +1002,7 @@ function liveSetAll(txId, status) {
    ========================================================= */
 function renderSettings() {
   $('#settingsTxCount').textContent = TRANSACTIONS.length;
+  updateCloudUI();
   $('#methodSetting').innerHTML = METHOD_NAMES.map(m => `<button class="chip" data-default-method="${m}" style="${m === SETTINGS.defaultMethod ? 'background:var(--grad);color:#fff;border-color:transparent' : ''}"><i class="fa-solid ${METHODS[m].icon}" style="color:${m === SETTINGS.defaultMethod ? '#fff' : METHODS[m].color}"></i> ${m}</button>`).join('');
 }
 function download(filename, text, type) {
@@ -996,6 +1109,9 @@ function handleAction(action, el) {
     case 'load-demo': loadDemo(); break;
     case 'clear-all': clearAll(); break;
     case 'toggle-theme': toggleTheme(); break;
+    case 'cloud-sync': cloudSyncNow(); break;
+    case 'cloud-push': if (!CLOUD.available) { toast('Cloud belum tersedia / offline', 'warn'); break; } pushCloud(); toast('Mengirim data ke cloud…', 'info'); break;
+    case 'cloud-pull': pullCloud({ silent: false }); break;
   }
 }
 function handleAct(act, el) {
@@ -1017,6 +1133,11 @@ function wireEvents() {
   $('#backdrop').addEventListener('click', closeSidebar);
   $('#themeToggleSidebar').addEventListener('click', toggleTheme);
   $('#themeToggleTop').addEventListener('click', toggleTheme);
+
+  // cloud sync
+  $('#cloudChip').addEventListener('click', cloudSyncNow);
+  window.addEventListener('focus', () => { if (CLOUD.available) pullCloud({ silent: true }); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && CLOUD.available) pullCloud({ silent: true }); });
 
   // global delegated clicks
   document.addEventListener('click', e => {
@@ -1075,6 +1196,11 @@ function init() {
   tickClock(); setInterval(tickClock, 1000);
   wireEvents();
   go('dashboard');
+  updateCloudUI();
+  bootstrapCloud();
+}
+async function bootstrapCloud() {
+  await initCloud();
   if (!SETTINGS.onboarded && TRANSACTIONS.length === 0) openModal('#modalWelcome');
 }
 document.addEventListener('DOMContentLoaded', init);
