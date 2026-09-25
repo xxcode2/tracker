@@ -524,7 +524,6 @@ function renderTransactions() {
     <tr>
       <td>${fmtDate(t.date)}</td>
       <td><div class="cust-cell"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div><div><strong>${esc(t.customerName)}</strong></div></div></td>
-      <td>${esc(t.tiktokUsername || '-')}</td>
       <td>${txQty(t)} pcs</td>
       <td><strong>${fmtRp(txTotal(t))}</strong></td>
       <td>${fmtRp(txDp(t))}</td>
@@ -539,7 +538,7 @@ function renderTransactions() {
         <button class="mini-btn co" data-act="co" data-id="${t.id}" title="Checkout"><i class="fa-solid fa-bag-shopping"></i></button>
         <button class="mini-btn del" data-act="del" data-id="${t.id}" title="Hapus"><i class="fa-solid fa-trash"></i></button>
       </div></td>
-    </tr>`).join('') + `<tr class="pager-tr"><td colspan="12">${pagerHTML('tx', pg.page, pg.pages, pg.total)}</td></tr>`;
+    </tr>`).join('') + `<tr class="pager-tr"><td colspan="11">${pagerHTML('tx', pg.page, pg.pages, pg.total)}</td></tr>`;
   mobile.innerHTML = list.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
@@ -593,7 +592,6 @@ function openTxModal(id) {
     const t = getTx(id);
     $('#modalTxTitle').textContent = 'Edit Transaksi';
     $('#fName').value = t.customerName || '';
-    $('#fTiktok').value = t.tiktokUsername || '';
     $('#fDate').value = t.date || todayStr();
     (t.items || []).forEach(i => addItemRow(i));
   } else {
@@ -622,11 +620,11 @@ function saveTxFromForm() {
   let t;
   if (id) {
     t = getTx(id);
-    Object.assign(t, { customerName: name, tiktokUsername: $('#fTiktok').value.trim(), date: $('#fDate').value || todayStr(), items });
+    Object.assign(t, { customerName: name, date: $('#fDate').value || todayStr(), items });
     // re-clamp: if paid now exceeds new total, keep payments but status auto recompute
     toast('Transaksi diperbarui', 'success');
   } else {
-    t = { id: uid(), customerName: name, tiktokUsername: $('#fTiktok').value.trim(), date: $('#fDate').value || todayStr(), items, payments: [], checkoutStatus: false, shopeeUsername: '', shopeeOrderNumber: '', checkoutDate: '', createdAt: Date.now() };
+    t = { id: uid(), customerName: name, tiktokUsername: '', date: $('#fDate').value || todayStr(), items, payments: [], checkoutStatus: false, shopeeUsername: '', shopeeOrderNumber: '', checkoutDate: '', createdAt: Date.now() };
     const dpAmt = toRp($('#fDpAmount').value);
     if (dpAmt > 0) t.payments.push({ kind: dpAmt >= txTotal(t) ? 'pelunasan' : 'dp', amount: dpAmt, method: $('#fDpMethod').value || SETTINGS.defaultMethod, date: t.date, at: Date.now() });
     TRANSACTIONS.push(t);
@@ -645,7 +643,7 @@ function showDetail(id) {
   $('#detailBody').innerHTML = `
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
       <div class="avatar" style="width:52px;height:52px;font-size:20px;background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-      <div><strong style="font-size:18px">${esc(t.customerName)}</strong><br><span class="stat-sub">${esc(t.tiktokUsername || '')} · ${fmtDate(t.date)}</span></div>
+      <div><strong style="font-size:18px">${esc(t.customerName)}</strong><br><span class="stat-sub">${fmtDate(t.date)}</span></div>
     </div>
     <div class="panel" style="margin-bottom:14px"><div class="panel-head"><h3>Barang</h3></div>${items}</div>
     <div class="panel" style="margin-bottom:14px"><div class="panel-head"><h3>Pembayaran</h3></div>${payments}</div>
@@ -922,7 +920,6 @@ function renderCustomers() {
     <div class="cust-card">
       <div class="avatar" style="background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
       <strong>${esc(c.name)}</strong>
-      <div class="cc-tt">${esc(c.tiktok || '—')}</div>
       <div class="cc-stats">
         <div><span>Order</span><strong>${c.orders}</strong></div>
         <div><span>Barang</span><strong>${c.qty} pcs</strong></div>
@@ -979,7 +976,7 @@ function renderTopCustomers() {
   const rankHTML = (arr, valFn, subFn) => arr.length ? arr.map((c, i) => `
     <li><div class="rk">${i + 1}</div>
       <div class="avatar" style="width:34px;height:34px;font-size:14px;border-radius:10px;background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
-      <div class="r-body"><strong>${esc(c.name)}</strong><br><span>${esc(c.tiktok || '')}</span></div>
+      <div class="r-body"><strong>${esc(c.name)}</strong></div>
       <div class="r-val">${valFn(c)}<br><span style="font-size:11px;color:var(--muted);font-weight:400">${subFn(c)}</span></div></li>`).join('')
     : `<li style="color:var(--muted);justify-content:center">Belum ada data</li>`;
   const byValue = [...list].sort((a, b) => b.value - a.value).slice(0, 6);
@@ -1027,7 +1024,7 @@ function renderLive() {
   $('#liveList').innerHTML = list.length ? pg.items.map(t => `
     <div class="live-card">
       <div class="lc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${esc(t.tiktokUsername || '')}</span></div></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong></div></div>
       <div class="lc-stats"><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span><span class="${txRemaining(t) > 0 ? 'trend-down' : 'trend-up'}">sisa ${fmtRp(txRemaining(t))}</span></div>
       <div class="tc-foot">${statusBadge(t)}</div>
       <div class="live-actions">
