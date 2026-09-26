@@ -885,13 +885,15 @@ function renderKeep() {
   const groups = [...map.values()].sort((a, b) => b.gTotal - a.gTotal || a.name.localeCompare(b.name));
   const pg = slicePage(groups, 'keep');
   $('#keepList').innerHTML = groups.length ? pg.items.map(g => {
-    const hangTxs = [...g.txs.values()].filter(t => txPaidTotal(t) > 0 && !t.hangus);
+    const hangTxs = [...g.txs.values()].filter(t => txPaidTotal(t) > 0 && txRemaining(t) > 0 && !t.hangus);
+    const coTxs = [...g.txs.values()].filter(t => txTotal(t) > 0 && txRemaining(t) === 0);
     const multi = g.txs.size > 1;
     return `
     <div class="keep-group${keepOpen.has(g.name) ? ' open' : ''}" data-keep-name="${esc(g.name)}">
       <div class="kg-head">
         <div class="avatar" style="background:${avatarColor(g.name)}">${esc(initials(g.name))}</div>
         <div class="kg-name"><strong>${esc(g.name)}</strong><span>${g.k} keep${g.ba ? ' · ' + g.ba + ' batal' : ''}${multi ? ' · ' + g.txs.size + ' sesi' : ''}</span></div>
+        ${coTxs.map(tt => `<button class="kg-co" data-act="co" data-id="${tt.id}" title="Sudah lunas — siap checkout Shopee"><i class="fa-solid fa-bag-shopping"></i> CO${multi ? ' · ' + fmtDate(tt.date) : ''}</button>`).join('')}
         ${hangTxs.map(tt => `<button class="kg-hangus" data-act="hangus" data-id="${tt.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk">${multi ? fmtDate(tt.date) + ' · ' : ''}<i class="fa-solid fa-fire"></i> DP Hangus</button>`).join('')}
         <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
         <i class="fa-solid fa-chevron-down kg-chev" aria-hidden="true"></i>
@@ -950,6 +952,7 @@ function renderCheckout() {
   const total = TRANSACTIONS.length;
   const done = TRANSACTIONS.filter(t => t.checkoutStatus).length;
   const pct = total ? Math.round(done / total * 100) : 0;
+  const readyCount = TRANSACTIONS.filter(t => !t.checkoutStatus && txTotal(t) > 0 && txRemaining(t) === 0).length;
   $('#coProgressPanel').innerHTML = `
     <div class="co-progress">
       <div class="p-top"><span>Progress Checkout</span><strong>${pct}% Checkout</strong></div>
@@ -958,6 +961,7 @@ function renderCheckout() {
         <div class="mini"><span>Total Customer</span><strong>${total}</strong></div>
         <div class="mini co-filter${cf === 'done' ? ' co-active' : ''}" data-action="co-filter" data-val="done" title="Klik: tampil yang sudah CO"><span>Sudah CO</span><strong>${done}</strong></div>
         <div class="mini co-filter${cf === 'pending' ? ' co-active' : ''}" data-action="co-filter" data-val="pending" title="Klik: tampil yang belum CO"><span>Belum CO</span><strong>${total - done}</strong></div>
+        <div class="mini co-filter${cf === 'ready' ? ' co-active' : ''}" data-action="co-filter" data-val="ready" title="Klik: tampil yang siap dikirim (lunas, belum CO)"><span>Siap Kirim</span><strong>${readyCount}</strong></div>
       </div>
     </div>`;
   requestAnimationFrame(() => { const b = $('#coProgressPanel .big-bar > i'); if (b) b.style.width = b.dataset.w + '%'; });
@@ -965,6 +969,7 @@ function renderCheckout() {
   if (cq) list = list.filter(t => String(t.customerName || '').toLowerCase().includes(cq) || String(t.shopeeUsername || '').toLowerCase().includes(cq));
   if (cf === 'done') list = list.filter(t => t.checkoutStatus);
   else if (cf === 'pending') list = list.filter(t => !t.checkoutStatus);
+  else if (cf === 'ready') list = list.filter(t => !t.checkoutStatus && txRemaining(t) === 0);
   const pg = slicePage(list, 'co');
   $('#coList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
