@@ -56,6 +56,7 @@ const METHODS = {
   ShopeePay: { icon: 'fa-shield-halved', color: '#ee4d2d' },
   Cash: { icon: 'fa-money-bill-1-wave', color: '#14b8a6' },
   'Transfer Bank': { icon: 'fa-building-columns', color: '#a855f7' },
+  'Shopee Dagang': { icon: 'fa-bag-shopping', color: '#f43f5e' },
 };
 const METHOD_NAMES = Object.keys(METHODS);
 
@@ -727,6 +728,10 @@ function fillMethodSelect(sel, selected) {
   sel.innerHTML = METHOD_NAMES.map(m => `<option value="${m}" ${m === (selected || SETTINGS.defaultMethod) ? 'selected' : ''}>${m}</option>`).join('');
 }
 
+/* ---- Shopee Dagang: uang masuk lewat pesanan/checkout Shopee (bucket terpisah, langsung dihitung lunas) ---- */
+function shopeeDagangOf(t) { return (t.payments || []).filter(p => p.method === 'Shopee Dagang').reduce((x, p) => x + (p.amount || 0), 0); }
+function shopeeDagangTotal() { return TRANSACTIONS.reduce((s, t) => s + shopeeDagangOf(t), 0); }
+
 function openDpModal(txId) {
   const list = TRANSACTIONS.filter(t => txTotal(t) > 0);
   if (!list.length) return toast('Belum ada transaksi untuk dicatat DP', 'warn');
@@ -806,7 +811,7 @@ function openCoModal(txId) {
   $('#coDate').value = todayStr();
   $('#coReceiver').value = t.customerName;
   $('#coWarnWrap').hidden = !unpaid;
-  $('#coWarn').innerHTML = '⚠ Transaksi ini <strong>belum lunas</strong> (sisa ' + fmtRp(txRemaining(t)) + '). Pelunasan harus selesai sebelum checkout Shopee.';
+  $('#coWarn').innerHTML = '⚠ Transaksi ini <strong>belum lunas</strong> (sisa ' + fmtRp(txRemaining(t)) + '). Centang di bawah kalau sisanya dibayar lewat pesanan Shopee (uang masuk ke Shopee Dagang, bukan QRIS/DANA/ShopeePay), atau catat pelunasan dulu.';
   $('#coLunasWrap').hidden = !unpaid;
   $('#coPaidNow').checked = false;
   openModal('#modalCo');
@@ -814,9 +819,9 @@ function openCoModal(txId) {
 function saveCo() {
   const t = getTx(activeCoId); if (!t) return;
   if (txRemaining(t) > 0) {
-    if (!$('#coPaidNow').checked) return toast('Belum lunas — centang "dibayar penuh lewat Shopee" atau catat pelunasan dulu.', 'error');
+    if (!$('#coPaidNow').checked) return toast('Belum lunas — centang "bayar via pesanan Shopee" atau catat pelunasan dulu.', 'error');
     t.payments = t.payments || [];
-    t.payments.push({ kind: 'pelunasan', amount: txRemaining(t), method: 'ShopeePay', date: $('#coDate').value || todayStr(), at: Date.now() });
+    t.payments.push({ kind: 'pelunasan', amount: txRemaining(t), method: 'Shopee Dagang', date: $('#coDate').value || todayStr(), at: Date.now() });
   }
   const shopee = $('#coShopee').value.trim();
   if (!shopee) return toast('Nama akun Shopee wajib diisi', 'error');
@@ -826,7 +831,8 @@ function saveCo() {
   t.shopeeOrderNumber = $('#coOrderNo').value.trim();
   t.checkoutDate = $('#coDate').value || todayStr();
   saveTx(); closeModal('#modalCo'); renderAll();
-  toast('Checkout Shopee berhasil 🛒', 'success');
+  const held = (t.payments || []).filter(p => p.method === 'Shopee Dagang').reduce((s, p) => s + (p.amount || 0), 0);
+  toast(held > 0 ? 'CO 🛒 lunas — sisa ' + fmtRp(held) + ' masuk Shopee Dagang' : 'Checkout Shopee berhasil 🛒', 'success');
 }
 
 /* =========================================================
@@ -953,6 +959,7 @@ function renderCheckout() {
   const done = TRANSACTIONS.filter(t => t.checkoutStatus).length;
   const pct = total ? Math.round(done / total * 100) : 0;
   const readyCount = TRANSACTIONS.filter(t => !t.checkoutStatus && txTotal(t) > 0 && txRemaining(t) === 0).length;
+  const dagang = shopeeDagangTotal();
   $('#coProgressPanel').innerHTML = `
     <div class="co-progress">
       <div class="p-top"><span>Progress Checkout</span><strong>${pct}% Checkout</strong></div>
@@ -962,6 +969,7 @@ function renderCheckout() {
         <div class="mini co-filter${cf === 'done' ? ' co-active' : ''}" data-action="co-filter" data-val="done" title="Klik: tampil yang sudah CO"><span>Sudah CO</span><strong>${done}</strong></div>
         <div class="mini co-filter${cf === 'pending' ? ' co-active' : ''}" data-action="co-filter" data-val="pending" title="Klik: tampil yang belum CO"><span>Belum CO</span><strong>${total - done}</strong></div>
         <div class="mini co-filter${cf === 'ready' ? ' co-active' : ''}" data-action="co-filter" data-val="ready" title="Klik: tampil yang siap dikirim (lunas, belum CO)"><span>Siap Kirim</span><strong>${readyCount}</strong></div>
+        <div class="mini" title="Total uang yang masuk lewat pesanan Shopee (terpisah dari QRIS / DANA / ShopeePay)"><span>Uang via Shopee Dagang</span><strong>${fmtRp(dagang)}</strong></div>
       </div>
     </div>`;
   requestAnimationFrame(() => { const b = $('#coProgressPanel .big-bar > i'); if (b) b.style.width = b.dataset.w + '%'; });
@@ -978,7 +986,8 @@ function renderCheckout() {
       ${t.checkoutStatus ? `
         <div class="tc-line"><span>Akun Shopee</span><strong>${esc(t.shopeeUsername || '-')}</strong></div>
         <div class="tc-line"><span>Tanggal CO</span><strong>${fmtDate(t.checkoutDate)}</strong></div>
-        <div class="tc-foot"><span class="badge b-green">SUDAH CO</span>${t.shopeeOrderNumber ? `<span class="badge b-muted">#${esc(t.shopeeOrderNumber)}</span>` : ''}</div>`
+        ${shopeeDagangOf(t) > 0 ? `<div class="tc-line"><span>Bayar via pesanan Shopee</span><strong>${fmtRp(shopeeDagangOf(t))}</strong></div>` : ''}
+        <div class="tc-foot"><span class="badge b-green">SUDAH CO</span>${t.shopeeOrderNumber ? `<span class="badge b-muted">#${esc(t.shopeeOrderNumber)}</span>` : ''}${shopeeDagangOf(t) > 0 ? '<span class="badge b-muted">SHOPEE DAGANG</span>' : ''}</div>`
       : `
         <div class="tc-line"><span>Sisa</span><strong class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</strong></div>
         <div class="tc-foot">${statusBadge(t)}</div>
@@ -1093,6 +1102,7 @@ function renderCharts() {
   const dayPcs = days.map(d => TRANSACTIONS.filter(t => t.date === d).reduce((s, t) => s + txQty(t), 0));
   const dayLabels = days.map(d => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short' }));
   const mm = paymentByMethod();
+  $('#methodTally').innerHTML = METHOD_NAMES.map(m => `<div class="mt-row${mm[m] ? '' : ' mt-zero'}"><span><i class="fa-solid ${METHODS[m].icon}" style="color:${METHODS[m].color}"></i> ${m}</span><strong>${fmtRp(mm[m])}</strong></div>`).join('');
   const st = [
     TRANSACTIONS.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length,
     TRANSACTIONS.filter(t => txPaidTotal(t) > 0 && !(txTotal(t) > 0 && txRemaining(t) === 0)).length,

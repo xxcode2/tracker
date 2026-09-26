@@ -222,7 +222,7 @@
           <div class="mini-grid" id="analyticsStats"></div>
           <div class="chart-grid">
             <div class="panel"><div class="panel-head"><h3>Penjualan Harian</h3></div><canvas id="chartDaily"></canvas></div>
-            <div class="panel"><div class="panel-head"><h3>Metode Pembayaran</h3></div><canvas id="chartMethod"></canvas></div>
+            <div class="panel"><div class="panel-head"><h3>Metode Pembayaran</h3></div><canvas id="chartMethod"></canvas><div class="method-tally" id="methodTally"></div></div>
             <div class="panel"><div class="panel-head"><h3>Status Customer</h3></div><canvas id="chartStatus"></canvas></div>
             <div class="panel"><div class="panel-head"><h3>Checkout</h3></div><canvas id="chartCheckout"></canvas></div>
             <div class="panel"><div class="panel-head"><h3>Barang Terjual per Hari</h3></div><canvas id="chartItems"></canvas></div>
@@ -410,7 +410,7 @@
           <div class="field"><label>Tanggal CO</label><input type="date" id="coDate" /></div>
           <div class="field field-full" id="coWarnWrap" hidden><div class="warn" id="coWarn"></div></div>
           <div class="field field-full" id="coLunasWrap" hidden>
-            <label class="co-check"><input type="checkbox" id="coPaidNow" /> <span>Sudah dibayar penuh lewat Shopee — tandai <strong>LUNAS</strong> otomatis (untuk order kecil yang langsung CO).</span></label>
+            <label class="co-check"><input type="checkbox" id="coPaidNow" /> <span>Sisanya dibayar lewat <strong>pesanan Shopee</strong> — langsung <strong>LUNAS</strong>, tapi uang masuk ke <strong>Shopee Dagang</strong> (terpisah dari QRIS / DANA / ShopeePay).</span></label>
           </div>
         </form>
       </div>

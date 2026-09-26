@@ -378,6 +378,11 @@ input, select { font-family: inherit; color: inherit; }
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 22px; }
 .chart-grid .panel { margin-bottom: 0; }
 .chart-grid canvas { max-height: 280px; }
+.method-tally { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.mt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 9px; background: var(--surface-solid); border: 1px solid var(--border); font-size: 13px; }
+.mt-row span { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.mt-row strong { font-family: var(--font-head); }
+.mt-row.mt-zero { opacity: .45; }
 
 /* live mode */
 .live-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 0 rgba(239,68,68,.6); animation: pulse 1.4s infinite; margin-right: 4px; }
