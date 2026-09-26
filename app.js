@@ -855,6 +855,7 @@ function renderDP() {
 /* =========================================================
    KEEP VIEW
    ========================================================= */
+const keepOpen = new Set(); // nama grup Keep yang lagi di-buka (accordion)
 function renderKeep() {
   const s = dashboardStats();
   $('#keepStats').innerHTML = [
@@ -887,12 +888,13 @@ function renderKeep() {
     const hangTxs = [...g.txs.values()].filter(t => txPaidTotal(t) > 0 && !t.hangus);
     const multi = g.txs.size > 1;
     return `
-    <div class="keep-group">
+    <div class="keep-group${keepOpen.has(g.name) ? ' open' : ''}" data-keep-name="${esc(g.name)}">
       <div class="kg-head">
         <div class="avatar" style="background:${avatarColor(g.name)}">${esc(initials(g.name))}</div>
         <div class="kg-name"><strong>${esc(g.name)}</strong><span>${g.k} keep${g.ba ? ' · ' + g.ba + ' batal' : ''}${multi ? ' · ' + g.txs.size + ' sesi' : ''}</span></div>
         ${hangTxs.map(tt => `<button class="kg-hangus" data-act="hangus" data-id="${tt.id}" title="DP hangus: barang kembali dijual, uang DP tetap masuk">${multi ? fmtDate(tt.date) + ' · ' : ''}<i class="fa-solid fa-fire"></i> DP Hangus</button>`).join('')}
         <div class="kg-sum">${fmtRp(g.gTotal)}<div class="kg-badges">${g.k ? `<span class="badge b-keep">${g.k} Keep</span>` : ''}${g.ba ? `<span class="badge b-batal">${g.ba} Batal</span>` : ''}</div></div>
+        <i class="fa-solid fa-chevron-down kg-chev" aria-hidden="true"></i>
       </div>
       <div class="kg-items">
         ${g.items.map((it, n) => `
@@ -943,6 +945,8 @@ function renderPelunasan() {
    CHECKOUT VIEW
    ========================================================= */
 function renderCheckout() {
+  const cf = ($('#coFilter') && $('#coFilter').value) || 'all';
+  const cq = ($('#coSearch') && $('#coSearch').value || '').toLowerCase();
   const total = TRANSACTIONS.length;
   const done = TRANSACTIONS.filter(t => t.checkoutStatus).length;
   const pct = total ? Math.round(done / total * 100) : 0;
@@ -952,12 +956,15 @@ function renderCheckout() {
       <div class="big-bar"><i data-w="${pct}"></i></div>
       <div class="mini-grid" style="margin-top:16px">
         <div class="mini"><span>Total Customer</span><strong>${total}</strong></div>
-        <div class="mini"><span>Sudah CO</span><strong>${done}</strong></div>
-        <div class="mini"><span>Belum CO</span><strong>${total - done}</strong></div>
+        <div class="mini co-filter${cf === 'done' ? ' co-active' : ''}" data-action="co-filter" data-val="done" title="Klik: tampil yang sudah CO"><span>Sudah CO</span><strong>${done}</strong></div>
+        <div class="mini co-filter${cf === 'pending' ? ' co-active' : ''}" data-action="co-filter" data-val="pending" title="Klik: tampil yang belum CO"><span>Belum CO</span><strong>${total - done}</strong></div>
       </div>
     </div>`;
   requestAnimationFrame(() => { const b = $('#coProgressPanel .big-bar > i'); if (b) b.style.width = b.dataset.w + '%'; });
-  const list = TRANSACTIONS.filter(t => txTotal(t) > 0);
+  let list = TRANSACTIONS.filter(t => txTotal(t) > 0);
+  if (cq) list = list.filter(t => String(t.customerName || '').toLowerCase().includes(cq) || String(t.shopeeUsername || '').toLowerCase().includes(cq));
+  if (cf === 'done') list = list.filter(t => t.checkoutStatus);
+  else if (cf === 'pending') list = list.filter(t => !t.checkoutStatus);
   const pg = slicePage(list, 'co');
   $('#coList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
@@ -971,7 +978,7 @@ function renderCheckout() {
         <div class="tc-line"><span>Sisa</span><strong class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</strong></div>
         <div class="tc-foot">${statusBadge(t)}</div>
         <button class="btn ${txRemaining(t) > 0 ? 'btn-ghost' : 'btn-primary'}" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i> CO SEKARANG</button>`}
-    </div>`).join('') + pagerHTML('co', pg.page, pg.pages, pg.total) : emptyState('Belum ada transaksi', 'Data checkout akan muncul di sini.');
+    </div>`).join('') + pagerHTML('co', pg.page, pg.pages, pg.total) : emptyState((cq || cf !== 'all') ? 'Tidak ada hasil' : 'Belum ada transaksi', (cq || cf !== 'all') ? 'Coba ubah pencarian / filter CO.' : 'Data checkout akan muncul di sini.');
 }
 
 /* =========================================================
@@ -1271,6 +1278,7 @@ function handleAction(action, el) {
     case 'add-keep': openTxModal(); break;
     case 'add-dp': openDpModal(id); break;
     case 'goto-checkout': go('checkout'); break;
+    case 'co-filter': { const val = el.dataset.val; const sel = $('#coFilter'); sel.value = (sel.value === val) ? 'all' : val; resetPage('co'); renderCheckout(); break; }
     case 'goto-pelunasan': go('pelunasan'); break;
     case 'export-csv': exportCSV(); break;
     case 'export-json': exportJSON(); break;
@@ -1318,6 +1326,7 @@ function wireEvents() {
     const a = e.target.closest('[data-action]'); if (a) { handleAction(a.dataset.action, a); }
     const act = e.target.closest('[data-act]'); if (act) { handleAct(act.dataset.act, act); }
     const is = e.target.closest('[data-item-status]'); if (is) { setItemStatus(is.dataset.id, +is.dataset.idx, is.dataset.itemStatus); }
+    const kh = e.target.closest('.kg-head'); if (kh && !e.target.closest('button')) { const grp = kh.closest('.keep-group'); const nm = grp.dataset.keepName; if (keepOpen.has(nm)) keepOpen.delete(nm); else keepOpen.add(nm); grp.classList.toggle('open'); }
     const dm = e.target.closest('[data-default-method]'); if (dm) { SETTINGS.defaultMethod = dm.dataset.defaultMethod; saveSettings(); renderSettings(); toast('Metode default: ' + SETTINGS.defaultMethod, 'info'); }
   });
 
@@ -1349,6 +1358,8 @@ function wireEvents() {
   $('#liveSearch').addEventListener('input', () => { resetPage('live'); renderLive(); });
   $('#keepSearch').addEventListener('input', () => { resetPage('keep'); renderKeep(); });
   $('#keepStatusFilter').addEventListener('change', () => { resetPage('keep'); renderKeep(); });
+  $('#coSearch').addEventListener('input', () => { resetPage('co'); renderCheckout(); });
+  $('#coFilter').addEventListener('change', () => { resetPage('co'); renderCheckout(); });
 
   // file inputs
   $('#importFile').addEventListener('change', e => readFileJSON(e.target, data => ingestTransactions(Array.isArray(data) ? data : data.transactions)));

@@ -202,6 +202,16 @@
         <section class="view" data-view="checkout">
           <div class="section-head"><h2>Checkout Shopee</h2></div>
           <div class="panel" id="coProgressPanel"></div>
+          <div class="toolbar" style="margin:14px 0">
+            <div class="search"><i class="fa-solid fa-magnifying-glass"></i>
+              <input id="coSearch" type="text" placeholder="Cari nama / akun Shopee..." />
+            </div>
+            <select id="coFilter" class="select">
+              <option value="all">Semua</option>
+              <option value="pending">Belum CO</option>
+              <option value="done">Sudah CO</option>
+            </select>
+          </div>
           <div class="card-grid" id="coList"></div>
         </section>
 
