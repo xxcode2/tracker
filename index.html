@@ -261,7 +261,10 @@
         <section class="view" data-view="bal">
           <div class="section-head">
             <h2>Bal / Era Modal</h2>
-            <button class="btn btn-primary" data-action="new-bal"><i class="fa-solid fa-plus"></i> Mulai Bal Baru</button>
+            <div class="head-btns">
+              <button class="btn btn-ghost" data-action="export-bal"><i class="fa-solid fa-file-csv"></i> Ekspor Rekap Bal</button>
+              <button class="btn btn-primary" data-action="new-bal"><i class="fa-solid fa-plus"></i> Mulai Bal Baru</button>
+            </div>
           </div>
           <p class="hint">Satu bal = satu babak modal. Lo sendiri yang buka bal baru pas uang yang masuk udah cukup buat kulakan lagi — angka dashboard mulai nol, tapi bal lama tetap utuh sebagai arsip. Klik kartu bal buat nampilin isi bal itu di seluruh app.</p>
           <div class="mini-grid" id="balSummary"><!-- injected --></div>
