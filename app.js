@@ -196,6 +196,7 @@ function txDp(t) { return txPaidByKind(t, 'dp'); }
 function txLunas(t) { return txPaidByKind(t, 'pelunasan'); }
 function txPaidTotal(t) { return txDp(t) + txLunas(t); }
 function txRemaining(t) { return Math.max(0, txTotal(t) - txPaidTotal(t)); }
+function txOver(t) { return Math.max(0, txPaidTotal(t) - txTotal(t)); }
 function txPaidStatus(t) {
   const total = txTotal(t), paid = txPaidTotal(t);
   if (total > 0 && paid >= total) return 'LUNAS';
@@ -399,7 +400,8 @@ function statusBadge(t) {
   const st = txPaidStatus(t);
   const map = { 'LUNAS': 'b-green', 'DP SEBAGIAN': 'b-yellow', 'BELUM DP': 'b-red' };
   const co = t.checkoutStatus ? '<span class="badge b-green">SUDAH CO</span>' : '';
-  return `<span class="badge ${map[st]}">${st}</span>${co}`;
+  const over = txOver(t) > 0 ? `<span class="badge b-yellow" title="Pembayaran melebihi harga ${fmtRp(txTotal(t))}">LEBIH BAYAR ${fmtRp(txOver(t))}</span>` : '';
+  return `<span class="badge ${map[st]}">${st}</span>${over}${co}`;
 }
 /* ---- Generic pagination (10 per page) ---- */
 const PAGE_SIZE = 10;
@@ -600,10 +602,12 @@ function openTxModal(id) {
     $('#fName').value = t.customerName || '';
     $('#fDate').value = t.date || todayStr();
     (t.items || []).forEach(i => addItemRow(i));
+    renderFormPayments(t);
   } else {
     $('#modalTxTitle').textContent = 'Tambah Transaksi';
     $('#fDate').value = todayStr();
     addItemRow();
+    $('#editPayWrap').hidden = true;
   }
   recomputeFormTotals();
   fillMethodSelect($('#fDpMethod'), SETTINGS.defaultMethod);
@@ -636,7 +640,8 @@ function saveTxFromForm() {
     const dpAmt = toRp($('#fDpAmount').value);
     if (dpAmt > 0) t.payments.push({ kind: dpAmt >= txTotal(t) ? 'pelunasan' : 'dp', amount: dpAmt, method: $('#fDpMethod').value || SETTINGS.defaultMethod, date: t.date, at: Date.now() });
     TRANSACTIONS.push(t);
-    toast('Transaksi berhasil ditambahkan', 'success');
+    if (dpAmt > txTotal(t)) toast('DP melebihi harga — kelebihan ' + fmtRp(dpAmt - txTotal(t)) + '. Bisa dikoreksi lewat tombol ✏️', 'warn');
+    else toast('Transaksi berhasil ditambahkan', 'success');
   }
   saveTx();
   closeModal('#modalTx');
@@ -647,7 +652,7 @@ function saveTxFromForm() {
 function showDetail(id) {
   const t = getTx(id); if (!t) return;
   $('#detailTitle').textContent = 'Detail Transaksi';
-  const payments = (t.payments || []).map(p => `<div class="tc-line"><span><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span> ${esc(p.method)} · ${fmtDate(p.date)}</span><strong>${fmtRp(p.amount)}</strong></div>`).join('') || '<p class="stat-sub">Belum ada pembayaran.</p>';
+  const payments = (t.payments || []).map((p, idx) => `<div class="tc-line"><span><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span> ${esc(p.method)} · ${fmtDate(p.date)}</span><strong>${fmtRp(p.amount)}</strong>${payActionsHTML(t.id, idx)}</div>`).join('') || '<p class="stat-sub">Belum ada pembayaran.</p>';
   const items = (t.items || []).map((i, idx) => `<div class="tc-line"><span>Barang ${idx + 1}</span><strong>${fmtRp(i.price)} <span class="badge ${i.status === 'batal' ? 'b-batal' : 'b-keep'}">${i.status}</span></strong></div>`).join('');
   $('#detailBody').innerHTML = `
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
@@ -732,39 +737,102 @@ function fillMethodSelect(sel, selected) {
 function shopeeDagangOf(t) { return (t.payments || []).filter(p => p.method === 'Shopee Dagang').reduce((x, p) => x + (p.amount || 0), 0); }
 function shopeeDagangTotal() { return TRANSACTIONS.reduce((s, t) => s + shopeeDagangOf(t), 0); }
 
-function openDpModal(txId) {
+/* ---- Koreksi pembayaran: edit / hapus DP & pelunasan yang salah ketik ---- */
+let dpEditIdx = null; // null = tambah baru; angka = index payment yang lagi dikoreksi
+function payActionsHTML(txId, idx) {
+  return `<div class="row-actions">
+    <button type="button" class="mini-btn edit" data-act="edit-pay" data-id="${txId}" data-idx="${idx}" title="Koreksi nominal / metode"><i class="fa-solid fa-pen"></i></button>
+    <button type="button" class="mini-btn del" data-act="del-pay" data-id="${txId}" data-idx="${idx}" title="Hapus pembayaran"><i class="fa-solid fa-trash"></i></button>
+  </div>`;
+}
+function renderFormPayments(t) {
+  const wrap = $('#editPayWrap'); if (!wrap) return;
+  const ps = t.payments || [];
+  wrap.innerHTML = `<div class="field-head"><label>Pembayaran yang sudah dicatat <em>(bisa dikoreksi / dihapus)</em></label>
+      <button type="button" class="btn btn-ghost" data-action="add-pay" data-id="${t.id}"><i class="fa-solid fa-plus"></i> Tambah</button></div>
+    ${ps.length ? ps.map((p, idx) => `<div class="ep-row"><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span>
+        <span class="ep-m"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span>
+        <strong>${fmtRp(p.amount)}</strong>${payActionsHTML(t.id, idx)}</div>`).join('')
+      : '<span class="hint-sm">Belum ada pembayaran tercatat.</span>'}
+    ${txOver(t) > 0 ? `<span class="hint-sm" style="color:#ffcf3f">⚠ Pembayaran melebihi harga ${fmtRp(txTotal(t))} — kelebihan ${fmtRp(txOver(t))}. Koreksi nominal yang kepanasan lewat ✏️.</span>` : '<span class="hint-sm">Salah ketik nominal / metode? Klik ✏️ untuk koreksi, 🗑 untuk hapus.</span>'}`;
+  wrap.hidden = false;
+}
+function refreshFormPayments() {
+  const wrap = $('#editPayWrap'); if (!wrap || wrap.hidden) return;
+  const t = getTx($('#txId').value);
+  if (!t) { wrap.hidden = true; return; }
+  renderFormPayments(t);
+}
+
+function openDpModal(txId, idx) {
   const list = TRANSACTIONS.filter(t => txTotal(t) > 0);
   if (!list.length) return toast('Belum ada transaksi untuk dicatat DP', 'warn');
-  fillMethodSelect($('#dpMethod'));
+  const target = getTx(txId) || list[0];
+  dpEditIdx = (idx == null) ? null : idx;
+  let p = dpEditIdx != null ? (target.payments || [])[dpEditIdx] : null;
+  if (dpEditIdx != null && !p) dpEditIdx = null;
+  fillMethodSelect($('#dpMethod'), p ? p.method : SETTINGS.defaultMethod);
   $('#dpCustomer').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.customerName)} — ${fmtRp(txTotal(t))} (sisa ${fmtRp(txRemaining(t))})</option>`).join('');
-  if (txId) $('#dpCustomer').value = txId;
-  $('#dpAmount').value = '';
+  $('#dpCustomer').value = target.id;
+  $('#dpCustomer').disabled = !!p;
+  $('#dpModalTitle').textContent = p ? 'Koreksi Pembayaran' : 'Catat DP';
+  $('#dpKindWrap').hidden = !p;
+  $('#dpAmountLabel').textContent = p ? 'Nominal (ribu rupiah)' : 'DP (ribu rupiah)';
+  $('#saveDp').innerHTML = '<i class="fa-solid fa-check"></i> ' + (p ? 'Simpan Koreksi' : 'Simpan DP');
+  $('#delDp').hidden = !p;
+  if (p) $('#dpKind').value = p.kind;
+  $('#dpAmount').value = p ? fmtK(p.amount) : '';
   syncDpPreview();
   openModal('#modalDp');
 }
 function syncDpPreview() {
   const t = getTx($('#dpCustomer').value);
   if (!t) return;
-  $('#dpTotal').textContent = fmtRp(txTotal(t));
-  $('#dpPaid').textContent = fmtRp(txPaidTotal(t));
   const amt = toRp($('#dpAmount').value);
-  $('#dpRemaining').textContent = fmtRp(Math.max(0, txRemaining(t) - amt));
+  const editing = dpEditIdx != null;
+  const old = editing ? ((t.payments || [])[dpEditIdx] || {}).amount || 0 : 0;
+  const others = txPaidTotal(t) - old;
+  const newPaid = others + amt;
+  $('#dpTotal').textContent = fmtRp(txTotal(t));
+  $('#dpPaidLabel').textContent = editing ? 'Dibayar setelah koreksi' : 'Sudah Dibayar';
+  $('#dpPaid').textContent = fmtRp(newPaid);
+  $('#dpRemaining').textContent = fmtRp(Math.max(0, txTotal(t) - newPaid));
+  const over = Math.max(0, newPaid - txTotal(t));
+  const w = $('#dpOverWrap');
+  if (w) { w.hidden = over <= 0; $('#dpOver').innerHTML = over > 0 ? '⚠ Nominal ini bikin pembayaran melebihi harga ' + fmtRp(txTotal(t)) + ' — kelebihan ' + fmtRp(over) + '. Gak masalah kalau emang mau lebihin, klik ✏️ lagi buat koreksi kalau salah ketik.' : ''; }
 }
 function saveDp() {
   const t = getTx($('#dpCustomer').value);
   const amt = toRp($('#dpAmount').value);
   if (!t) return toast('Pilih customer', 'error');
-  if (amt <= 0) return toast('Nominal DP tidak valid', 'error');
+  if (amt <= 0) return toast('Nominal tidak valid', 'error');
   const method = $('#dpMethod').value;
+  if (dpEditIdx != null) {
+    const p = (t.payments || [])[dpEditIdx];
+    if (!p) return toast('Pembayaran tidak ditemukan', 'error');
+    p.amount = amt; p.method = method; p.kind = $('#dpKind').value;
+    saveTx(); closeModal('#modalDp'); renderAll(); refreshFormPayments();
+    toast('Dikoreksi: ' + p.kind.toUpperCase() + ' ' + fmtRp(amt) + ' via ' + method, 'success');
+    return;
+  }
   const doIt = () => {
     t.payments = t.payments || [];
     t.payments.push({ kind: 'dp', amount: amt, method, date: todayStr(), at: Date.now() });
-    saveTx(); closeModal('#modalDp'); renderAll();
+    saveTx(); closeModal('#modalDp'); renderAll(); refreshFormPayments();
     toast(`DP ${fmtRp(amt)} berhasil dicatat`, 'success');
   };
   if (amt > txRemaining(t)) {
     confirmDialog('Melebihi Sisa', `DP ${fmtRp(amt)} lebih besar dari sisa ${fmtRp(txRemaining(t))}. Simpan sebagai pembayaran berlebih?`, 'Ya, Simpan', doIt);
   } else doIt();
+}
+function deletePayment(txId, idx) {
+  const t = getTx(txId); if (!t) return;
+  const p = (t.payments || [])[idx]; if (!p) return toast('Pembayaran tidak ditemukan', 'error');
+  confirmDialog('Hapus Pembayaran', `Hapus ${p.kind.toUpperCase()} ${fmtRp(p.amount)} via ${p.method} atas nama ${t.customerName}?`, 'Hapus', () => {
+    t.payments.splice(idx, 1);
+    saveTx(); closeModal('#modalDp'); renderAll(); refreshFormPayments();
+    toast('Pembayaran dihapus', 'info');
+  });
 }
 
 let activeLunasId = null;
@@ -786,7 +854,7 @@ function saveLunas() {
   const doIt = () => {
     t.payments = t.payments || [];
     t.payments.push({ kind: 'pelunasan', amount: amt, method, date: todayStr(), at: Date.now() });
-    saveTx(); closeModal('#modalLunas'); renderAll();
+    saveTx(); closeModal('#modalLunas'); renderAll(); refreshFormPayments();
     toast(txRemaining(t) === 0 ? 'Customer sudah lunas 🎉' : `Pelunasan ${fmtRp(amt)} tercatat`, 'success');
   };
   if (amt > txRemaining(t)) {
@@ -845,17 +913,26 @@ function renderDP() {
     { k: 'Total Pelunasan', v: fmtRp(s.totalLunas) },
     { k: 'Sudah DP', v: TRANSACTIONS.filter(t => txPaidTotal(t) > 0).length + ' trx' },
     { k: 'Belum DP', v: TRANSACTIONS.filter(t => txPaidTotal(t) === 0).length + ' trx' },
+    { k: 'Lebih Bayar', v: TRANSACTIONS.filter(t => txOver(t) > 0).length + ' trx' },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
   const rows = [];
-  TRANSACTIONS.forEach(t => (t.payments || []).forEach(p => rows.push({ t, p })));
+  TRANSACTIONS.forEach(t => (t.payments || []).forEach((p, idx) => rows.push({ t, p, idx })));
   rows.sort((a, b) => (b.p.at || 0) - (a.p.at || 0));
   const pgD = slicePage(rows, 'dp');
-  $('#paymentHistory').innerHTML = rows.length ? pgD.items.map(({ t, p }) => `
+  $('#paymentHistory').innerHTML = rows.length ? pgD.items.map(({ t, p, idx }) => `
     <tr><td>${fmtDate(p.date)}</td><td>${esc(t.customerName)}</td>
       <td><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span></td>
       <td><strong>${fmtRp(p.amount)}</strong></td>
-      <td><span class="cust-cell"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span></td></tr>`).join('') + `<tr class="pager-tr"><td colspan="5">${pagerHTML('dp', pgD.page, pgD.pages, pgD.total)}</td></tr>`
-    : `<tr><td colspan="5" style="text-align:center;color:var(--muted)">Belum ada pembayaran.</td></tr>`;
+      <td><span class="cust-cell"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span></td>
+      <td>${payActionsHTML(t.id, idx)}</td></tr>`).join('') + `<tr class="pager-tr"><td colspan="6">${pagerHTML('dp', pgD.page, pgD.pages, pgD.total)}</td></tr>`
+    : `<tr><td colspan="6" style="text-align:center;color:var(--muted)">Belum ada pembayaran.</td></tr>`;
+  $('#paymentHistoryMobile').innerHTML = rows.length ? pgD.items.map(({ t, p, idx }) => `
+    <div class="tx-card">
+      <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${fmtDate(p.date)} · <span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span></span></div></div>
+      <div class="tc-line"><span><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span><strong>${fmtRp(p.amount)}</strong></div>
+      ${payActionsHTML(t.id, idx)}
+    </div>`).join('') : '';
 }
 
 /* =========================================================
@@ -1292,6 +1369,7 @@ function handleAction(action, el) {
     case 'cust-history': showCustomerHistory(el.dataset.name || ''); break;
     case 'add-keep': openTxModal(); break;
     case 'add-dp': openDpModal(id); break;
+    case 'add-pay': openDpModal(id); break;
     case 'goto-checkout': go('checkout'); break;
     case 'co-filter': { const val = el.dataset.val; const sel = $('#coFilter'); sel.value = (sel.value === val) ? 'all' : val; resetPage('co'); renderCheckout(); break; }
     case 'goto-pelunasan': go('pelunasan'); break;
@@ -1318,6 +1396,8 @@ function handleAct(act, el) {
     case 'co': openCoModal(id); break;
     case 'lunas': openLunasModal(id); break;
     case 'add-dp': openDpModal(id); break;
+    case 'edit-pay': openDpModal(id, +el.dataset.idx); break;
+    case 'del-pay': deletePayment(id, +el.dataset.idx); break;
     case 'live-keep': liveSetAll(id, 'keep'); break;
     case 'live-cancel': confirmDialog('Batalkan Transaksi', `Batalkan semua barang untuk ${getTx(id)?.customerName || ''}?`, 'Batalkan', () => liveSetAll(id, 'batal')); break;
     case 'hangus': markHangus(id); break;
@@ -1357,6 +1437,7 @@ function wireEvents() {
   $('#dpCustomer').addEventListener('change', syncDpPreview);
   $('#dpAmount').addEventListener('input', syncDpPreview);
   $('#saveDp').addEventListener('click', saveDp);
+  $('#delDp').addEventListener('click', () => { const t = getTx($('#dpCustomer').value); if (t && dpEditIdx != null) deletePayment(t.id, dpEditIdx); });
   $('#saveLunas').addEventListener('click', saveLunas);
   $('#saveCo').addEventListener('click', saveCo);
 

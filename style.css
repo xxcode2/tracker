@@ -299,6 +299,15 @@ input, select { font-family: inherit; color: inherit; }
 .field-head em { font-style: normal; color: var(--muted); font-weight: 400; font-size: 12px; }
 .init-dp { display: grid; grid-template-columns: 1fr 170px; gap: 10px; }
 #initDpWrap .hint strong { color: var(--text); font-family: var(--font-head); }
+/* existing payments inside the edit-transaction form */
+.select:disabled { opacity: .6; cursor: not-allowed; }
+.ep-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin-bottom: 6px; border-radius: 10px; background: var(--surface-solid); border: 1px solid var(--border); font-size: 13px; }
+.ep-row .ep-m { flex: 1; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-row > strong { font-family: var(--font-head); }
+.ep-row .row-actions { flex: none; }
+.ep-row .mini-btn { width: 28px; height: 28px; }
+#editPayWrap .field-head { margin-bottom: 10px; }
+#editPayWrap .btn-ghost { padding: 7px 12px; font-size: 12px; }
 /* paid-via-shopee toggle in checkout modal */
 .co-check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; line-height: 1.5; cursor: pointer; }
 .co-check input[type=checkbox] { width: 18px; height: 18px; padding: 0; margin: 1px 0 0; flex: none; accent-color: var(--purple); }

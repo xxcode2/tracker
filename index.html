@@ -165,9 +165,10 @@
           <div class="panel">
             <div class="panel-head"><h3><i class="fa-solid fa-list-check"></i> Riwayat Pembayaran</h3></div>
             <div class="table-wrap">
-              <table class="tbl"><thead><tr><th>Tanggal</th><th>Customer</th><th>Jenis</th><th>Nominal</th><th>Metode</th></tr></thead>
+              <table class="tbl"><thead><tr><th>Tanggal</th><th>Customer</th><th>Jenis</th><th>Nominal</th><th>Metode</th><th>Aksi</th></tr></thead>
               <tbody id="paymentHistory"></tbody></table>
             </div>
+            <div class="mobile-cards" id="paymentHistoryMobile"></div>
           </div>
         </section>
 
@@ -350,6 +351,8 @@
             </div>
             <span class="hint">Sisa setelah DP: <strong id="fDpRemaining">Rp0</strong> · Isi penuh = langsung LUNAS. Kosongkan jika belum bayar.</span>
           </div>
+
+          <div class="field field-full" id="editPayWrap" hidden></div>
         </form>
       </div>
       <div class="modal-foot">
@@ -362,18 +365,20 @@
   <!-- ===================== MODAL: DP ===================== -->
   <div class="modal" id="modalDp" hidden>
     <div class="modal-card">
-      <div class="modal-head"><h3>Catat DP</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-head"><h3 id="dpModalTitle">Catat DP</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
       <div class="modal-body">
         <form id="dpForm" class="form-grid">
           <div class="field field-full"><label>Customer</label><select id="dpCustomer" class="select"></select></div>
           <div class="field"><label>Total Belanja</label><div class="readonly" id="dpTotal">Rp0</div></div>
-          <div class="field"><label>Sudah Dibayar</label><div class="readonly" id="dpPaid">Rp0</div></div>
-          <div class="field"><label>DP (ribu rupiah)</label><input id="dpAmount" type="number" min="0" placeholder="40" /></div>
+          <div class="field"><label id="dpPaidLabel">Sudah Dibayar</label><div class="readonly" id="dpPaid">Rp0</div></div>
+          <div class="field" id="dpKindWrap" hidden><label>Jenis Pembayaran</label><select id="dpKind" class="select"><option value="dp">DP</option><option value="pelunasan">Pelunasan</option></select></div>
+          <div class="field"><label id="dpAmountLabel">DP (ribu rupiah)</label><input id="dpAmount" type="number" min="0" placeholder="40" /></div>
           <div class="field"><label>Metode Pembayaran</label><select id="dpMethod" class="select"></select></div>
-          <div class="field field-full"><label class="auto">Sisa setelah DP: <strong id="dpRemaining">Rp0</strong></label></div>
+          <div class="field field-full"><label class="auto">Sisa setelah pembayaran: <strong id="dpRemaining">Rp0</strong></label></div>
+          <div class="field field-full" id="dpOverWrap" hidden><div class="warn" id="dpOver"></div></div>
         </form>
       </div>
-      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveDp"><i class="fa-solid fa-check"></i> Simpan DP</button></div>
+      <div class="modal-foot"><button class="btn btn-ghost" id="delDp" hidden><i class="fa-solid fa-trash"></i> Hapus</button><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveDp"><i class="fa-solid fa-check"></i> Simpan</button></div>
     </div>
   </div>
 
