@@ -409,7 +409,12 @@
           <div class="field"><label>Barang</label><div class="readonly" id="coQty">0 pcs</div></div>
           <div class="field"><label>Total</label><div class="readonly" id="coTotal">Rp0</div></div>
           <div class="field"><label>Sisa</label><div class="readonly" id="coRemaining">Rp0</div></div>
-          <div class="field"><label>Nama Akun Shopee</label><input id="coShopee" placeholder="@sitishop123" /></div>
+          <div class="field field-full co-shopee-field"><label>Nama Akun Shopee</label>
+            <input id="coShopee" list="shopeeAccounts" placeholder="@sitishop123" autocomplete="on" />
+            <datalist id="shopeeAccounts"></datalist>
+            <span class="hint-sm" id="coShopeeHint" hidden></span>
+            <div class="chip-row co-picks" id="coShopeePicks" hidden></div>
+          </div>
           <div class="field"><label>Nama Penerima</label><input id="coReceiver" placeholder="Siti" /></div>
           <div class="field"><label>Nomor Pesanan (opsional)</label><input id="coOrderNo" placeholder="2409..." /></div>
           <div class="field"><label>Tanggal CO</label><input type="date" id="coDate" /></div>

@@ -456,6 +456,12 @@ tr.pager-tr > td { padding: 0; border: none; background: transparent; }
 .field-inline > label { display: block; font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { padding: 7px 14px; border-radius: 30px; background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; }
+/* saved Shopee accounts quick-pick in the CO modal */
+.co-picks { margin-top: 9px; }
+.chip.sm { padding: 6px 11px; font-size: 11.5px; cursor: pointer; transition: .18s; }
+.co-pick:hover { border-color: var(--purple); transform: translateY(-2px); }
+.co-pick.on { background: var(--grad); color: #fff; border-color: transparent; }
+#coShopeeHint { color: var(--text); }
 
 /* empty state */
 .empty { text-align: center; padding: 50px 20px; color: var(--muted); animation: fadeUp .4s ease; }

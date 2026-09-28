@@ -737,6 +737,15 @@ function fillMethodSelect(sel, selected) {
 function shopeeDagangOf(t) { return (t.payments || []).filter(p => p.method === 'Shopee Dagang').reduce((x, p) => x + (p.amount || 0), 0); }
 function shopeeDagangTotal() { return TRANSACTIONS.reduce((s, t) => s + shopeeDagangOf(t), 0); }
 
+/* ---- Riwayat akun Shopee per customer: dipakai buat auto-isi form CO ---- */
+function coHistoryFor(name) {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n) return [];
+  return TRANSACTIONS
+    .filter(t => String(t.customerName || '').trim().toLowerCase() === n && t.checkoutStatus && String(t.shopeeUsername || '').trim())
+    .sort((a, b) => String(b.checkoutDate || b.date || '').localeCompare(String(a.checkoutDate || a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0));
+}
+
 /* ---- Koreksi pembayaran: edit / hapus DP & pelunasan yang salah ketik ---- */
 let dpEditIdx = null; // null = tambah baru; angka = index payment yang lagi dikoreksi
 function payActionsHTML(txId, idx) {
@@ -877,12 +886,35 @@ function openCoModal(txId) {
   $('#coRemaining').textContent = fmtRp(txRemaining(t));
   $('#coForm').reset();
   $('#coDate').value = todayStr();
-  $('#coReceiver').value = t.customerName;
+  prefillCoAccounts(t);
   $('#coWarnWrap').hidden = !unpaid;
   $('#coWarn').innerHTML = '⚠ Transaksi ini <strong>belum lunas</strong> (sisa ' + fmtRp(txRemaining(t)) + '). Centang di bawah kalau sisanya dibayar lewat pesanan Shopee (uang masuk ke Shopee Dagang, bukan QRIS/DANA/ShopeePay), atau catat pelunasan dulu.';
   $('#coLunasWrap').hidden = !unpaid;
   $('#coPaidNow').checked = false;
   openModal('#modalCo');
+}
+/* Auto-isi akun Shopee + penerima dari CO customer yang sama sebelumnya */
+function prefillCoAccounts(t) {
+  const hist = coHistoryFor(t.customerName);
+  const uses = {};
+  hist.forEach(x => {
+    const u = String(x.shopeeUsername).trim();
+    const o = uses[u] || (uses[u] = { n: 0, receiver: '', date: '' });
+    o.n++;
+    if (!o.receiver) o.receiver = x.shopeeReceiver || '';
+    if (!o.date) o.date = x.checkoutDate || x.date || '';
+  });
+  const users = Object.keys(uses);
+  const last = users[0] || '';
+  const all = [...new Set(TRANSACTIONS.map(x => String(x.shopeeUsername || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  $('#shopeeAccounts').innerHTML = all.map(a => `<option value="${esc(a)}"></option>`).join('');
+  $('#coShopee').value = last;
+  $('#coReceiver').value = (last && uses[last].receiver) || t.customerName;
+  const hint = $('#coShopeeHint'), picks = $('#coShopeePicks');
+  hint.hidden = !last;
+  hint.innerHTML = last ? `⚡ Otomatis dari CO sebelumnya${fmtDate(uses[last].date) ? ' · ' + fmtDate(uses[last].date) : ''} — ganti kalau kali ini akunnya beda.` : '';
+  picks.hidden = users.length < 2;
+  picks.innerHTML = users.length < 2 ? '' : users.map(u => `<button type="button" class="chip sm co-pick${u === last ? ' on' : ''}" data-act="co-pick" data-id="${t.id}" data-shopee="${esc(u)}" data-receiver="${esc(uses[u].receiver)}">${esc(u)} · ${uses[u].n}x</button>`).join('');
 }
 function saveCo() {
   const t = getTx(activeCoId); if (!t) return;
@@ -1398,6 +1430,7 @@ function handleAct(act, el) {
     case 'add-dp': openDpModal(id); break;
     case 'edit-pay': openDpModal(id, +el.dataset.idx); break;
     case 'del-pay': deletePayment(id, +el.dataset.idx); break;
+    case 'co-pick': { $('#coShopee').value = el.dataset.shopee || ''; if (el.dataset.receiver) $('#coReceiver').value = el.dataset.receiver; $$('#coShopeePicks .co-pick').forEach(b => b.classList.toggle('on', b.dataset.shopee === el.dataset.shopee)); break; }
     case 'live-keep': liveSetAll(id, 'keep'); break;
     case 'live-cancel': confirmDialog('Batalkan Transaksi', `Batalkan semua barang untuk ${getTx(id)?.customerName || ''}?`, 'Batalkan', () => liveSetAll(id, 'batal')); break;
     case 'hangus': markHangus(id); break;
