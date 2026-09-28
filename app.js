@@ -327,6 +327,24 @@ function cashInDays(n = 7) {
 }
 /* Angka plus/minus yang kebaca: minus di depan, gak nyelip di tengah "Rp" */
 function fmtSigned(v) { return v >= 0 ? fmtRp(v) : '-' + fmtRp(-v); }
+/* Versi pendek buat chip/tag biar kartu gak melar: 1,5jt / 450rb */
+function fmtRpShort(v) {
+  v = Math.round(v || 0);
+  if (v >= 1e6) return (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace('.', ',') + 'jt';
+  if (v >= 1000) return Math.round(v / 1000) + 'rb';
+  return 'Rp' + nf.format(v);
+}
+/* Rincian belanja per bal dari sekumpulan transaksi (dipakai kartu customer & timeline) */
+function balSplitOf(txs) {
+  const map = new Map();
+  txs.forEach(t => {
+    const b = balOf(t), k = b ? b.id : '_tanpa';
+    const o = map.get(k) || { id: b ? b.id : '', name: b ? b.name : 'Tanpa bal', status: b ? b.status : '', startDate: b ? b.startDate : '', n: 0, qty: 0, value: 0, paid: 0, sisa: 0 };
+    o.n++; o.qty += txQty(t); o.value += txTotal(t); o.paid += txPaidTotal(t); o.sisa += txRemaining(t);
+    map.set(k, o);
+  });
+  return [...map.values()];
+}
 /* Label bal — cuma perlu di daftar yang isinya lintas bal (Keep / Pelunasan / Checkout / Live). */
 function balTagHTML(t, force = false) {
   const b = balOf(t); if (!b) return '';
@@ -824,11 +842,14 @@ function showCustomerHistory(name) {
   const totalBayar = txs.reduce((s, t) => s + txPaidTotal(t), 0);
   const sisa = txs.reduce((s, t) => s + txRemaining(t), 0);
   const coCount = txs.filter(t => t.checkoutStatus).length;
+  /* rincian per bal — customer ini makannya di era mana aja */
+  const bals = balSplitOf(txs).sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)) || String(b.name).localeCompare(String(a.name)));
+  const multiBal = bals.length > 1;
   $('#detailTitle').textContent = 'Riwayat Customer';
   $('#detailBody').innerHTML = `
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
       <div class="avatar" style="width:52px;height:52px;font-size:20px;background:${avatarColor(name)}">${esc(initials(name))}</div>
-      <div><strong style="font-size:18px">${esc(name)}</strong><br><span class="stat-sub">${txs.length} order · terakhir ${fmtDate(txs[0].date)}</span></div>
+      <div><strong style="font-size:18px">${esc(name)}</strong><br><span class="stat-sub">${txs.length} order · terakhir ${fmtDate(txs[0].date)}${multiBal ? ` · ${bals.length} bal` : ''}</span></div>
     </div>
     <div class="cc-stats" style="margin-bottom:14px">
       <div><span>Total Belanja</span><strong>${fmtRp(totalBelanja)}</strong></div>
@@ -836,6 +857,12 @@ function showCustomerHistory(name) {
       <div><span>Dibayar</span><strong>${fmtRp(totalBayar)}</strong></div>
       <div><span>Sisa / Piutang</span><strong class="${sisa > 0 ? 'trend-down' : ''}">${fmtRp(sisa)}</strong></div>
     </div>
+    ${multiBal ? `<div class="panel" style="margin-bottom:14px"><div class="panel-head"><h3><i class="fa-solid fa-boxes-packing"></i> Belanja per Bal</h3><span class="badge b-muted">${bals.length} bal</span></div>
+      ${bals.map(x => `<div class="cb-row${x.status === 'aktif' ? ' is-aktif' : ''}">
+        <div class="cb-top"><span class="cb-name">${esc(x.name)}</span>${x.status === 'aktif' ? '<span class="badge b-green">AKTIF</span>' : '<span class="badge b-muted">ARSIP</span>'}</div>
+        <div class="cb-figs"><span>${x.n} order · ${x.qty} pcs · belanja <strong>${fmtRp(x.value)}</strong></span><span>Dibayar ${fmtRp(x.paid)} · Sisa <strong class="${x.sisa > 0 ? 'trend-down' : ''}">${fmtRp(x.sisa)}</strong></span></div>
+      </div>`).join('')}
+    </div>` : ''}
     <div style="display:flex;gap:8px;margin-bottom:14px">
       <button class="btn btn-primary" data-action="add-for-customer" data-name="${esc(name)}"><i class="fa-solid fa-plus"></i> Order Baru</button>
     </div>
@@ -846,7 +873,7 @@ function showCustomerHistory(name) {
           <div class="hi-date">${fmtDate(t.date)}</div>
           <div class="hi-body">
             <div class="hi-top"><strong>${txQty(t)} barang · ${fmtRp(txTotal(t))}</strong>${statusBadge(t)}</div>
-            <div class="hi-sub">Dibayar ${fmtRp(txPaidTotal(t))} · Sisa <span class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</span>${t.checkoutStatus ? ' · <i class="fa-solid fa-bag-shopping"></i> CO' : ''}${t.hangus ? ' · <i class="fa-solid fa-fire"></i> hangus' : ''}</div>
+            <div class="hi-sub">Dibayar ${fmtRp(txPaidTotal(t))} · Sisa <span class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</span>${t.checkoutStatus ? ' · <i class="fa-solid fa-bag-shopping"></i> CO' : ''}${t.hangus ? ' · <i class="fa-solid fa-fire"></i> hangus' : ''}${multiBal ? ' ' + balTagHTML(t, true) : ''}</div>
           </div>
           <i class="fa-solid fa-chevron-right hi-chev"></i>
         </div>`).join('')}
@@ -1278,25 +1305,39 @@ function customerAgg(list = TRANSACTIONS) {
   const map = new Map();
   list.forEach(t => {
     const key = (t.customerName || 'Tanpa Nama').trim();
-    if (!map.has(key)) map.set(key, { name: key, tiktok: t.tiktokUsername || '', phone: t.phone || '', orders: 0, qty: 0, value: 0, paid: 0, co: 0 });
+    if (!map.has(key)) map.set(key, { name: key, tiktok: t.tiktokUsername || '', phone: t.phone || '', orders: 0, qty: 0, value: 0, paid: 0, co: 0, _b: new Map(), _last: '', balLast: '' });
     const c = map.get(key);
     c.orders++; c.qty += txQty(t); c.value += txTotal(t); c.paid += txPaidTotal(t);
     if (t.checkoutStatus) c.co++;
     if (t.tiktokUsername) c.tiktok = t.tiktokUsername;
     if (t.phone) c.phone = t.phone;
+    /* tag bal: customer ini belanja di bal mana aja, tiap bal berapa */
+    const b = balOf(t), bk = b ? b.id : '_tanpa';
+    const o = c._b.get(bk) || { id: b ? b.id : '', name: b ? b.name : 'Tanpa bal', status: b ? b.status : '', startDate: b ? b.startDate : '', n: 0, qty: 0, value: 0, paid: 0, sisa: 0 };
+    o.n++; o.qty += txQty(t); o.value += txTotal(t); o.paid += txPaidTotal(t); o.sisa += txRemaining(t);
+    c._b.set(bk, o);
+    const d = String(t.date || '');
+    if (d >= c._last) { c._last = d; c.balLast = balNameOf(t) || 'Tanpa bal'; }
   });
-  return [...map.values()];
+  return [...map.values()].map(c => {
+    c.balSplit = [...c._b.values()].sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || String(a.name).localeCompare(String(b.name)));
+    c.balCount = c.balSplit.length;
+    delete c._b; delete c._last;
+    return c;
+  });
 }
 function renderCustomers() {
   const q = ($('#custSearch').value || '').toLowerCase();
   let list = customerAgg().filter(c => !q || c.name.toLowerCase().includes(q) || c.tiktok.toLowerCase().includes(q));
   list.sort((a, b) => b.value - a.value);
   const pg = slicePage(list, 'cust');
+  const showBal = BALES.length > 1; // masih satu bal: gak usah pake tag, nanti cuma berisik
   $('#custGrid').innerHTML = list.length ? pg.items.map(c => `
     <div class="cust-card">
       <div class="cc-top" data-action="cust-history" data-name="${esc(c.name)}" title="Lihat riwayat order">
         <div class="avatar" style="background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
         <strong>${esc(c.name)}</strong>
+        ${showBal ? (c.balCount > 1 ? `<div class="cc-repeat" title="Udah belanja di ${c.balCount} bal berbeda"><i class="fa-solid fa-rotate"></i> Belanja di ${c.balCount} bal</div>` : `<div class="cc-once"><i class="fa-solid fa-boxes-packing"></i> ${esc(c.balLast || (c.balSplit[0] || {}).name || '')}</div>`) : ''}
       </div>
       <div class="cc-stats">
         <div><span>Order</span><strong>${c.orders}</strong></div>
@@ -1304,6 +1345,7 @@ function renderCustomers() {
         <div><span>Total Belanja</span><strong>${fmtRp(c.value)}</strong></div>
         <div><span>Checkout</span><strong>${c.co}/${c.orders}</strong></div>
       </div>
+      ${showBal ? `<div class="cc-bals" title="Rincian belanja per bal">${c.balSplit.map(x => `<span class="cc-bal${x.status === 'aktif' ? ' is-aktif' : ''}"><i class="fa-solid fa-boxes-packing"></i> ${esc(x.name)} <b>${fmtRpShort(x.value)}</b>${x.sisa > 0 ? `<em class="trend-down">sisa ${fmtRpShort(x.sisa)}</em>` : ''}</span>`).join('')}</div>` : ''}
       <button class="cc-add" data-action="add-for-customer" data-name="${esc(c.name)}" title="Tambah order baru untuk customer ini"><i class="fa-solid fa-plus"></i> Order Lagi</button>
     </div>`).join('') + pagerHTML('cust', pg.page, pg.pages, pg.total) : emptyState('Belum ada customer', 'Data customer muncul otomatis dari transaksi.', 'add-tx');
 }
@@ -1366,8 +1408,9 @@ function renderTopCustomers(listSrc) {
     : `<li style="color:var(--muted);justify-content:center">Belum ada data</li>`;
   const byValue = [...list].sort((a, b) => b.value - a.value).slice(0, 6);
   const byQty = [...list].sort((a, b) => b.qty - a.qty).slice(0, 6);
-  $('#topByValue').innerHTML = rankHTML(byValue, c => fmtRp(c.value), c => `${c.orders} order · ${c.qty} pcs`);
-  $('#topByQty').innerHTML = rankHTML(byQty, c => c.qty + ' pcs', c => `${c.orders} order · ${fmtRp(c.value)}`);
+  const nBal = c => c.balCount > 1 ? ` · ${c.balCount} bal` : '';
+  $('#topByValue').innerHTML = rankHTML(byValue, c => fmtRp(c.value), c => `${c.orders} order · ${c.qty} pcs${nBal(c)}`);
+  $('#topByQty').innerHTML = rankHTML(byQty, c => c.qty + ' pcs', c => `${c.orders} order · ${fmtRp(c.value)}${nBal(c)}`);
 }
 function gridColor() { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(255,255,255,.08)' : 'rgba(20,20,40,.08)'; }
 function textColor() { return document.documentElement.getAttribute('data-theme') === 'dark' ? '#c9c9d6' : '#5b5b78'; }
@@ -1697,6 +1740,11 @@ function demoData() {
     mk('Bagus', '@bagusstore', dd(1), [
       { price: 120000, status: 'final' }],
       [P('pelunasan', 120000, 'Transfer Bank')], { shopee: '@baguss', no: '2409B3', date: dd(1) }),
+    /* Tomi customer bal lama yang balik lagi di bal baru — dipakai buat lihat tag bal di Data Customer */
+    mk('Tomi', '@tomi.gudang', dd(1), [
+      { price: 65000, status: 'final' },
+      { price: 40000, status: 'keep' }],
+      [P('dp', 40000, 'QRIS')]),
     mk('Indah', '@indahh', dd(4), [
       { price: 55000, status: 'keep' },
       { price: 45000, status: 'final' }],

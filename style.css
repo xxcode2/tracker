@@ -627,6 +627,24 @@ body::before {
 .bc-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
 .bal-empty { padding: 26px; border: 1px dashed var(--border); border-radius: 16px; color: var(--muted); text-align: center; }
 
+/* tag bal di kartu customer + rincian per bal di modal riwayat */
+.cc-repeat, .cc-once { font-size: 11px; margin-top: 5px; }
+.cc-repeat { color: var(--purple); font-weight: 700; }
+.cc-once { color: var(--muted); }
+.cc-bals { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 11px; }
+.cc-bal { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 4px 9px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+.cc-bal i { font-size: 10px; opacity: .7; }
+.cc-bal b { color: var(--text); font-family: var(--font-head); }
+.cc-bal em { font-style: normal; font-size: 10px; }
+.cc-bal.is-aktif { border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.10); }
+.cb-row { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.cb-row:last-child { border-bottom: none; }
+.cb-row.is-aktif { background: rgba(34,197,94,.06); }
+.cb-top { display: flex; align-items: center; gap: 8px; }
+.cb-name { font-family: var(--font-head); font-weight: 700; font-size: 14px; }
+.cb-figs { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.cb-figs strong { color: var(--text); }
+
 @media (max-width: 720px) {
   #balCompare.table-wrap { display: block; overflow-x: auto; } /* tabel perbandingan tetap kebaca di HP */
   #balCompare .tbl { min-width: 780px; }
