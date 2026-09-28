@@ -28,6 +28,12 @@
         </div>
       </div>
 
+      <div class="bal-switch">
+        <label for="balSwitch"><i class="fa-solid fa-boxes-packing"></i> BAL / ERA MODAL</label>
+        <select id="balSwitch" class="select"></select>
+        <button class="bal-manage" data-action="goto-bal"><i class="fa-solid fa-table-list"></i> Kelola bal &amp; mulai bal baru</button>
+      </div>
+
       <nav class="nav" id="nav">
         <button class="nav-item active" data-view="dashboard"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></button>
         <button class="nav-item" data-view="transaksi"><i class="fa-solid fa-receipt"></i><span>Transaksi</span></button>
@@ -37,6 +43,7 @@
         <button class="nav-item" data-view="checkout"><i class="fa-solid fa-bag-shopping"></i><span>Checkout Shopee</span></button>
         <button class="nav-item" data-view="analytics"><i class="fa-solid fa-chart-line"></i><span>Analytics</span></button>
         <button class="nav-item" data-view="customer"><i class="fa-solid fa-users"></i><span>Data Customer</span></button>
+        <button class="nav-item" data-view="bal"><i class="fa-solid fa-boxes-packing"></i><span>Bal / Modal</span></button>
         <button class="nav-item" data-view="live"><i class="fa-solid fa-tower-broadcast"></i><span>Live Mode</span></button>
         <button class="nav-item" data-view="pengaturan"><i class="fa-solid fa-gear"></i><span>Pengaturan</span></button>
       </nav>
@@ -65,6 +72,7 @@
             <strong id="headerClock">--:--:--</strong>
           </div>
           <div class="sys-status"><span class="dot"></span> SYSTEM READY</div>
+          <button class="bal-chip" id="balChip" data-action="goto-bal" title="Bal yang lagi dibuka — klik buat kelola bal"><i class="fa-solid fa-boxes-packing"></i><span>Bal</span></button>
           <button class="cloud-chip" id="cloudChip" title="Klik untuk sinkron sekarang"><i class="fa-solid fa-cloud"></i><span>Offline</span></button>
           <button class="theme-toggle" id="themeToggleTop" title="Ganti tema"><i class="fa-solid fa-moon"></i></button>
         </div>
@@ -85,6 +93,8 @@
               <button class="btn btn-ghost" data-action="goto-pelunasan"><i class="fa-solid fa-circle-check"></i> Pelunasan</button>
             </div>
           </div>
+
+          <div class="bal-strip" id="balStrip" hidden></div>
 
           <div class="stat-grid" id="statGrid"><!-- injected --></div>
 
@@ -246,6 +256,21 @@
           <div class="card-grid" id="custGrid"></div>
         </section>
 
+        <!-- ============ BAL / ERA MODAL ============ -->
+        <section class="view" data-view="bal">
+          <div class="section-head">
+            <h2>Bal / Era Modal</h2>
+            <button class="btn btn-primary" data-action="new-bal"><i class="fa-solid fa-plus"></i> Mulai Bal Baru</button>
+          </div>
+          <p class="hint">Satu bal = satu babak modal. Lo sendiri yang buka bal baru pas uang yang masuk udah cukup buat kulakan lagi — angka dashboard mulai nol, tapi bal lama tetap utuh sebagai arsip. Klik kartu bal buat nampilin isi bal itu di seluruh app.</p>
+          <div class="mini-grid" id="balSummary"><!-- injected --></div>
+          <div class="bal-cards" id="balCards"><!-- injected --></div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-code-compare"></i> Perbandingan Antar Bal</h3></div>
+            <div class="table-wrap" id="balCompare"><!-- injected --></div>
+          </div>
+        </section>
+
         <!-- ============ LIVE MODE ============ -->
         <section class="view" data-view="live">
           <div class="section-head">
@@ -327,6 +352,7 @@
           <input type="hidden" id="txId" />
           <div class="field"><label>Nama Customer *</label><input id="fName" list="custNames" autocomplete="on" placeholder="Ketik / pilih nama customer" /><datalist id="custNames"></datalist><span class="hint-sm">Pilih nama yang sudah ada supaya data customer nyambung — order baru tetap terpisah, tidak dobel dengan yang kemarin.</span></div>
           <div class="field field-full"><label>Tanggal Transaksi</label><input type="date" id="fDate" /></div>
+          <div class="field field-full"><label>Bal / Era Modal</label><select id="fBal" class="select"></select><span class="hint-sm" id="fBalHint"></span></div>
 
           <div class="field field-full">
             <div class="field-head"><label>Daftar Barang (harga dalam ribu)</label>
@@ -359,6 +385,25 @@
         <button class="btn btn-ghost" data-close>Batal</button>
         <button class="btn btn-primary" id="saveTx"><i class="fa-solid fa-floppy-disk"></i> Simpan</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: BAL ===================== -->
+  <div class="modal" id="modalBal" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><h3 id="balModalTitle">Mulai Bal Baru</h3><button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="modal-body">
+        <form id="balForm" class="form-grid">
+          <input type="hidden" id="balId" />
+          <div class="field"><label>Nama Bal *</label><input id="bName" placeholder="TSC" autocomplete="off" /><span class="hint-sm">Bebas — biasanya jenis bal atau dari siapa lo beli. Contoh: TSC, Kuning, Bal 3.</span></div>
+          <div class="field"><label>Beli Dari (opsional)</label><input id="bSupplier" placeholder="si A / gudang Cihurip" autocomplete="off" /></div>
+          <div class="field"><label>Tanggal Mulai Bal *</label><input type="date" id="bStart" /></div>
+          <div class="field"><label>Modal Bal (ribu) *</label><input id="bModal" type="number" min="0" step="1" placeholder="6000" /><span class="hint-sm">Satu angka total, udah termasuk ongkir / kemasan / dll. 6000 = Rp6.000.000.</span></div>
+          <div class="field field-full"><label>Target Kas (ribu, opsional)</label><input id="bTarget" type="number" min="0" step="1" placeholder="7500" /><span class="hint-sm">Isi kalau lo mau lihat progress bar terhadap target. Kosongkan kalau cuma mau lihat jalan.</span></div>
+          <div class="field field-full"><span class="hint-sm" id="balHint"></span></div>
+        </form>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="saveBal"><i class="fa-solid fa-plus"></i> Mulai Bal Ini</button></div>
     </div>
   </div>
 

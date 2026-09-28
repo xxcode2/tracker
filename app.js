@@ -62,6 +62,7 @@ const METHOD_NAMES = Object.keys(METHODS);
 
 /* ---------------- Store ---------------- */
 const KEY_TX = 'pakein.transactions';
+const KEY_BAL = 'pakein.bales';
 const KEY_SET = 'pakein.settings';
 const KEY_THEME = 'pakein.theme';
 const KEY_META = 'pakein.meta';
@@ -69,21 +70,26 @@ const API_URL = '/api/data';
 const CLOUD_POLL_MS = 45000;
 
 let TRANSACTIONS = [];
-let SETTINGS = { defaultMethod: 'QRIS', onboarded: false };
+let BALES = []; // era modal / "bal" — lihat blok BAL. Satu bal aktif, sisanya arsip.
+let SETTINGS = { defaultMethod: 'QRIS', onboarded: false, balScope: '' };
 // Cloud sync state
 let CLOUD = { available: false, updatedAt: 0, timer: null, poll: null, state: 'offline' };
 
 function loadState() {
   try { TRANSACTIONS = JSON.parse(localStorage.getItem(KEY_TX)) || []; } catch { TRANSACTIONS = []; }
+  try { BALES = JSON.parse(localStorage.getItem(KEY_BAL)) || []; } catch { BALES = []; }
   try { SETTINGS = Object.assign(SETTINGS, JSON.parse(localStorage.getItem(KEY_SET)) || {}); } catch {}
   try { CLOUD.updatedAt = (JSON.parse(localStorage.getItem(KEY_META) || '{}').updatedAt) || 0; } catch { CLOUD.updatedAt = 0; }
+  ensureBales();
 }
 function saveTx() { localStorage.setItem(KEY_TX, JSON.stringify(TRANSACTIONS)); markLocalChange(); }
+function writeLocalBales() { localStorage.setItem(KEY_BAL, JSON.stringify(BALES)); }
+function saveBales() { writeLocalBales(); markLocalChange(); }
 function saveSettings() { localStorage.setItem(KEY_SET, JSON.stringify(SETTINGS)); }
 
 /* =========================================================
    CLOUD SYNC (JSONBin via Vercel serverless proxy at /api/data)
-   Model: 1 Bin = { updatedAt, transactions[] }. Single user,
+   Model: 1 Bin = { updatedAt, transactions[], bales[] }. Single user,
    pull-if-newer + push-on-change. LocalStorage tetap jadi cache.
    ========================================================= */
 async function cloudGET() {
@@ -104,6 +110,11 @@ async function cloudPUT(payload) {
   } catch { return false; }
 }
 function writeLocalTx() { localStorage.setItem(KEY_TX, JSON.stringify(TRANSACTIONS)); }
+// bales ikut tersimpan di bin yang sama; kalau remote belum punya, pakai lokal lalu ikut ter-push
+function mergeCloudBales(g) {
+  if (Array.isArray(g.bales) && g.bales.length) { BALES = g.bales.map(normalizeBal); writeLocalBales(); }
+  healBalIds();
+}
 function bumpTimestamp() { CLOUD.updatedAt = Date.now(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt })); }
 function markLocalChange() {
   bumpTimestamp();
@@ -116,7 +127,7 @@ function scheduleCloudPush(delay = 900) {
 async function pushCloud() {
   if (!CLOUD.available) return;
   setCloudState('syncing');
-  const ok = await cloudPUT({ updatedAt: CLOUD.updatedAt, transactions: TRANSACTIONS });
+  const ok = await cloudPUT({ updatedAt: CLOUD.updatedAt, transactions: TRANSACTIONS, bales: BALES });
   setCloudState(ok ? 'online' : 'error');
   if (ok && currentView === 'pengaturan') renderSettings();
 }
@@ -128,6 +139,7 @@ async function pullCloud({ silent = true } = {}) {
     TRANSACTIONS = Array.isArray(g.transactions) ? g.transactions.map(normalizeTx) : [];
     CLOUD.updatedAt = g.updatedAt || 0;
     writeLocalTx(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt }));
+    mergeCloudBales(g);
     renderAll();
     setCloudState('online');
     if (!silent) toast('Data terbaru ditarik dari cloud ☁️', 'info');
@@ -156,6 +168,7 @@ async function initCloud() {
     TRANSACTIONS = Array.isArray(g.transactions) ? g.transactions.map(normalizeTx) : [];
     CLOUD.updatedAt = g.updatedAt || 0;
     writeLocalTx(); localStorage.setItem(KEY_META, JSON.stringify({ updatedAt: CLOUD.updatedAt }));
+    mergeCloudBales(g);
     renderAll();
   } else if (Array.isArray(g.transactions) && g.transactions.length === 0 && TRANSACTIONS.length > 0) {
     // cloud masih kosong tapi lokal sudah ada data -> seed naik
@@ -205,6 +218,121 @@ function txPaidStatus(t) {
 }
 function keepCountOf(t, status) { return (t.items || []).filter(i => i.status === status).length; }
 function getTx(id) { return TRANSACTIONS.find(t => t.id === id); }
+
+/* =========================================================
+   BAL — satu bal = satu babak modal
+   Lo yang buka bal baru (manual, tanpa target waktu). Semua transaksi
+   nempel ke satu bal (t.balId); bal lama jadi arsip datanya utuh.
+   ========================================================= */
+function makeBal(o = {}) {
+  return {
+    id: o.id || uid(),
+    name: String(o.name || '').trim() || ('Bal ' + (BALES.length + 1)),
+    supplier: String(o.supplier || '').trim(),
+    startDate: o.startDate || todayStr(),
+    modal: Math.max(0, +o.modal || 0),      // rupiah (input dalam ribu), sudah termasuk ongkir/kemasan
+    target: Math.max(0, +o.target || 0),    // rupiah; 0 = gak pakai target
+    status: o.status === 'selesai' ? 'selesai' : 'aktif',
+    closedAt: o.closedAt || '',
+    createdAt: o.createdAt || Date.now(),
+  };
+}
+function normalizeBal(b) { return makeBal(b || {}); }
+function balById(id) { return BALES.find(b => b.id === id) || null; }
+function activeBal() { return BALES.find(b => b.status === 'aktif') || BALES[BALES.length - 1] || null; }
+function balOf(t) { return t ? balById(t.balId) : null; }
+function balNameOf(t) { const b = balOf(t); return b ? b.name : ''; }
+/* Bal yang lagi dibuka di layar: id bal, atau 'all' (semua bal digabung) */
+function balScopeId() {
+  const s = SETTINGS.balScope;
+  if (s === 'all') return 'all';
+  if (s && balById(s)) return s;
+  const a = activeBal();
+  return a ? a.id : 'all';
+}
+function scopeBal() { const s = balScopeId(); return s === 'all' ? null : balById(s); }
+/* Transaksi dalam bal yang lagi dibuka — ini yang dipakai semua angka dashboard/analytics. */
+function STX() { const s = balScopeId(); return s === 'all' ? TRANSACTIONS : TRANSACTIONS.filter(t => (t.balId || '') === s); }
+/* Transaksi tanpa bal (data lama / hasil import) dititipkan ke bal aktif biar gak yatim. */
+function healBalIds() {
+  const a = activeBal();
+  let dirty = false;
+  TRANSACTIONS.forEach(t => { if (!t.balId || !balById(t.balId)) { t.balId = a ? a.id : ''; dirty = true; } });
+  if (dirty) writeLocalTx();
+  if (SETTINGS.balScope && SETTINGS.balScope !== 'all' && !balById(SETTINGS.balScope)) { SETTINGS.balScope = a ? a.id : 'all'; saveSettings(); }
+}
+function ensureBales() {
+  if (!Array.isArray(BALES)) BALES = [];
+  if (!BALES.length) {
+    const first = TRANSACTIONS.map(t => t.date).filter(Boolean).sort()[0];
+    BALES = [makeBal({ name: 'Bal 1', startDate: first || todayStr(), status: 'aktif' })];
+    writeLocalBales();
+  }
+  healBalIds();
+}
+function resetAllPages() { ['tx', 'dp', 'keep', 'pelunasan', 'co', 'cust', 'live', 'bal'].forEach(resetPage); }
+function setBalScope(id) {
+  if (id && id !== 'all' && !balById(id)) return;
+  SETTINGS.balScope = id || balScopeId();
+  saveSettings(); resetAllPages(); renderAll();
+}
+function activateBal(id) {
+  const b = balById(id); if (!b) return;
+  BALES.forEach(x => { if (x.id !== id && x.status === 'aktif') { x.status = 'selesai'; x.closedAt = x.closedAt || todayStr(); } });
+  b.status = 'aktif'; b.closedAt = '';
+  SETTINGS.balScope = b.id;
+  saveBales(); saveSettings(); resetAllPages(); renderAll();
+  toast('Bal "' + b.name + '" jadi bal aktif', 'success');
+}
+function closeBal(id) {
+  const b = balById(id); if (!b) return;
+  const s = balStats(b);
+  confirmDialog('Tutup Bal', 'Tutup "' + b.name + '" jadi arsip? Datanya tetap ada. ' + (s.piutang > 0 ? 'Masih ada piutang ' + fmtRp(s.piutang) + ' di bal ini — tetap bisa ditagih di Keep / Pelunasan.' : 'Tidak ada piutang tersisa.'), 'Tutup Bal', () => {
+    b.status = 'selesai'; b.closedAt = todayStr();
+    saveBales(); renderAll(); toast('Bal ditutup — jadi arsip, data utuh', 'info');
+  });
+}
+/* Angka satu bal. Kas = uang yang beneran masuk (DP + pelunasan + Shopee Dagang + DP hangus ditahan). */
+function balStats(b) {
+  const txs = TRANSACTIONS.filter(t => (t.balId || '') === ((b && b.id) || ''));
+  const live = txs.filter(t => !t.hangus);
+  const modal = (b && b.modal) || 0, target = (b && b.target) || 0;
+  const omzet = txs.reduce((s, t) => s + txTotal(t), 0);
+  const pcs = txs.reduce((s, t) => s + txQty(t), 0);
+  const dp = live.reduce((s, t) => s + txDp(t), 0);
+  const lunas = live.reduce((s, t) => s + txLunas(t), 0);
+  const hangus = txs.reduce((s, t) => s + (t.hangus ? (t.hangusAmount != null ? t.hangusAmount : txPaidTotal(t)) : 0), 0);
+  const kas = dp + lunas + hangus;
+  const piutang = txs.reduce((s, t) => s + txRemaining(t), 0);
+  return {
+    bal: b, txs, n: txs.length, omzet, pcs, dp, lunas, hangus, kas, piutang, modal, target,
+    dagang: txs.reduce((s, t) => s + shopeeDagangOf(t), 0),
+    keepItems: txs.reduce((s, t) => s + (t.checkoutStatus ? 0 : keepCountOf(t, 'keep')), 0),
+    coDone: txs.filter(t => t.checkoutStatus).length,
+    belumCo: txs.filter(t => !t.checkoutStatus && txTotal(t) > 0).length,
+    sisaUang: kas - modal,
+    pctModal: modal ? Math.round(kas / modal * 100) : 0,
+    pctTarget: target ? Math.round(kas / target * 100) : 0,
+    aov: txs.length ? omzet / txs.length : 0,
+    hari: Math.max(1, Math.round((Date.now() - new Date(((b && b.startDate) || todayStr()) + 'T00:00:00').getTime()) / 86400000)),
+  };
+}
+/* Cek realita duit di tangan: semua pembayaran yang masuk n hari terakhir, lintas bal. */
+function cashInDays(n = 7) {
+  const today = new Date(todayStr() + 'T00:00:00'); const from = new Date(today); from.setDate(from.getDate() - (n - 1));
+  const f = isoDate(from), t = todayStr();
+  let sum = 0;
+  TRANSACTIONS.forEach(x => (x.payments || []).forEach(p => { if (p.date && p.date >= f && p.date <= t) sum += (p.amount || 0); }));
+  return sum;
+}
+/* Angka plus/minus yang kebaca: minus di depan, gak nyelip di tengah "Rp" */
+function fmtSigned(v) { return v >= 0 ? fmtRp(v) : '-' + fmtRp(-v); }
+/* Label bal — cuma perlu di daftar yang isinya lintas bal (Keep / Pelunasan / Checkout / Live). */
+function balTagHTML(t, force = false) {
+  const b = balOf(t); if (!b) return '';
+  if (!force && balScopeId() !== 'all' && b.id === balScopeId()) return '';
+  return `<span class="badge b-muted bal-tag" title="Tercatat di bal ${esc(b.name)}"><i class="fa-solid fa-boxes-packing"></i> ${esc(b.name)}</span>`;
+}
 
 /* =========================================================
    TOAST
@@ -260,7 +388,7 @@ function tickClock() {
 /* =========================================================
    ROUTER
    ========================================================= */
-const VIEW_TITLES = { dashboard: 'Tracker Penjualan Pakein', transaksi: 'Transaksi', dp: 'DP Customer', keep: 'Barang Keep', pelunasan: 'Pelunasan', checkout: 'Checkout Shopee', analytics: 'Analytics', customer: 'Data Customer', live: 'Live Selling Mode', pengaturan: 'Pengaturan' };
+const VIEW_TITLES = { dashboard: 'Tracker Penjualan Pakein', transaksi: 'Transaksi', dp: 'DP Customer', keep: 'Barang Keep', pelunasan: 'Pelunasan', checkout: 'Checkout Shopee', analytics: 'Analytics', customer: 'Data Customer', bal: 'Bal / Era Modal', live: 'Live Selling Mode', pengaturan: 'Pengaturan' };
 let currentView = 'dashboard';
 function go(view) {
   currentView = view;
@@ -272,7 +400,8 @@ function go(view) {
   $('#content').scrollIntoView({ block: 'start' });
 }
 function renderView(view) {
-  if (view === 'dashboard') renderDashboard();
+  renderBalSwitcher();
+  if (view === 'dashboard') { renderBalStrip(); renderDashboard(); }
   else if (view === 'transaksi') renderTransactions();
   else if (view === 'dp') renderDP();
   else if (view === 'keep') renderKeep();
@@ -280,6 +409,7 @@ function renderView(view) {
   else if (view === 'checkout') renderCheckout();
   else if (view === 'analytics') renderAnalytics();
   else if (view === 'customer') renderCustomers();
+  else if (view === 'bal') renderBales();
   else if (view === 'live') renderLive();
   else if (view === 'pengaturan') renderSettings();
 }
@@ -308,7 +438,7 @@ function animateCount(el, target, { money = false, suffix = '' } = {}) {
    DASHBOARD
    ========================================================= */
 function dashboardStats() {
-  const txs = TRANSACTIONS, today = todayStr();
+  const txs = STX(), today = todayStr();
   const totalTx = txs.length;
   const totalPcs = txs.reduce((s, t) => s + txQty(t), 0);
   const totalValue = txs.reduce((s, t) => s + txTotal(t), 0);
@@ -341,6 +471,17 @@ function renderDashboard() {
     { label: 'Belum Checkout', value: s.coPending, suffix: ' trx', sub: 'Menunggu proses', icon: 'fa-box-open', bg: 'linear-gradient(135deg,#64748b,#334155)' },
   ];
   const grid = $('#statGrid');
+  const b = scopeBal();
+  if (b) {
+    const s = balStats(b);
+    cards.push(
+      { label: 'Modal ' + b.name, value: s.modal, money: true, sub: `mulai ${fmtDate(b.startDate)} · ${s.hari} hari jalan`, icon: 'fa-boxes-packing', bg: 'linear-gradient(135deg,#f43f5e,#f97316)' },
+      { label: 'Kas Masuk Bal Ini', value: s.kas, money: true, sub: s.modal ? `${s.pctModal}% dari modal${s.sisaUang >= 0 ? ' · udah balik modal ✓' : ''}` : 'isi modal bal buat lihat %', icon: 'fa-vault', bg: 'linear-gradient(135deg,#22c55e,#84cc16)' },
+      s.sisaUang >= 0
+        ? { label: 'Kelebihan Kas', value: s.sisaUang, money: true, sub: 'bisa jadi modal bal berikutnya', icon: 'fa-arrow-trend-up', bg: 'linear-gradient(135deg,#14b8a6,#3b82f6)', cls: 'trend-up' }
+        : { label: 'Kurang Modal', value: -s.sisaUang, money: true, sub: 'kas belum nutup modal bal ini', icon: 'fa-arrow-trend-down', bg: 'linear-gradient(135deg,#ef4444,#b91c1c)', cls: 'trend-down' },
+    );
+  }
   grid.innerHTML = cards.map((c, i) => `
     <div class="stat-card">
       <div class="stat-top">
@@ -362,7 +503,7 @@ function renderDashboard() {
 
 function renderDailyReport() {
   const today = todayStr();
-  const t = TRANSACTIONS.filter(x => x.date === today);
+  const t = STX().filter(x => x.date === today);
   const rows = [
     { k: 'Customer', v: t.length },
     { k: 'Barang', v: t.reduce((s, x) => s + txQty(x), 0) + ' pcs' },
@@ -378,7 +519,7 @@ function renderDailyReport() {
 
 function paymentByMethod() {
   const map = {}; METHOD_NAMES.forEach(m => map[m] = 0);
-  TRANSACTIONS.forEach(t => (t.payments || []).forEach(p => { if (map[p.method] != null) map[p.method] += p.amount; }));
+  STX().forEach(t => (t.payments || []).forEach(p => { if (map[p.method] != null) map[p.method] += p.amount; }));
   return map;
 }
 function renderMethodList() {
@@ -434,7 +575,7 @@ function pagerHTML(key, page, pages, total) {
 function resetPage(key) { PAGE_STATE[key] = 1; }
 
 function renderRecent() {
-  const list = [...TRANSACTIONS].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 10);
+  const list = [...STX()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 10);
   if (!list.length) { $('#recentGrid').innerHTML = emptyState('Belum ada transaksi', 'Mulai catat hasil live kamu hari ini.', 'add-tx'); return; }
   $('#recentGrid').innerHTML = list.map(t => `
     <div class="recent-card">
@@ -495,7 +636,7 @@ function filteredTx() {
   const q = ($('#txSearch').value || '').toLowerCase().trim();
   const sf = $('#txStatusFilter').value;
   const df = currentDateFilter();
-  return TRANSACTIONS.filter(t => {
+  return STX().filter(t => {
     if (q) {
       const hay = [t.customerName, t.tiktokUsername, t.shopeeUsername].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
@@ -523,7 +664,7 @@ function renderTransactions() {
   const body = $('#txBody'), mobile = $('#txMobileCards'), empty = $('#txEmpty');
   if (!all.length) {
     body.innerHTML = ''; mobile.innerHTML = '';
-    empty.hidden = false; empty.innerHTML = emptyState(TRANSACTIONS.length ? 'Tidak ada hasil' : 'Belum ada transaksi', TRANSACTIONS.length ? 'Coba ubah pencarian / filter.' : 'Mulai catat hasil live kamu hari ini.', 'add-tx');
+    empty.hidden = false; empty.innerHTML = emptyState(STX().length ? 'Tidak ada hasil' : 'Belum ada transaksi di bal ini', STX().length ? 'Coba ubah pencarian / filter.' : 'Mulai catat hasil live kamu hari ini, atau ganti bal di menu kiri.', 'add-tx');
     return;
   }
   empty.hidden = true;
@@ -531,7 +672,7 @@ function renderTransactions() {
   body.innerHTML = list.map(t => `
     <tr>
       <td>${fmtDate(t.date)}</td>
-      <td><div class="cust-cell"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div><div><strong>${esc(t.customerName)}</strong></div></div></td>
+      <td><div class="cust-cell"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div><div><strong>${esc(t.customerName)}</strong>${balTagHTML(t)}</div></div></td>
       <td>${txQty(t)} pcs</td>
       <td><strong>${fmtRp(txTotal(t))}</strong></td>
       <td>${fmtRp(txDp(t))}</td>
@@ -550,7 +691,7 @@ function renderTransactions() {
   mobile.innerHTML = list.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${fmtDate(t.date)} · ${txQty(t)} pcs</span></div></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${fmtDate(t.date)} · ${txQty(t)} pcs</span>${balTagHTML(t)}</div></div>
       <div class="tc-line"><span>Total</span><strong>${fmtRp(txTotal(t))}</strong></div>
       <div class="tc-line"><span>Sisa</span><strong class="${txRemaining(t) > 0 ? 'trend-down' : ''}">${fmtRp(txRemaining(t))}</strong></div>
       <div class="tc-foot">${statusBadge(t)}${keepBadge(t)}</div>
@@ -603,12 +744,15 @@ function openTxModal(id) {
     $('#fDate').value = t.date || todayStr();
     (t.items || []).forEach(i => addItemRow(i));
     renderFormPayments(t);
+    fillBalSelect($('#fBal'), t.balId);
   } else {
     $('#modalTxTitle').textContent = 'Tambah Transaksi';
     $('#fDate').value = todayStr();
     addItemRow();
     $('#editPayWrap').hidden = true;
+    fillBalSelect($('#fBal'), balScopeId() !== 'all' ? balScopeId() : (activeBal() || {}).id);
   }
+  syncBalHint();
   recomputeFormTotals();
   fillMethodSelect($('#fDpMethod'), SETTINGS.defaultMethod);
   $('#initDpWrap').style.display = id ? 'none' : '';
@@ -629,17 +773,21 @@ function saveTxFromForm() {
     items.push({ price, status: r.querySelector('.item-status').value });
   }
   const id = $('#txId').value;
+  const balId = $('#fBal') && $('#fBal').value ? $('#fBal').value : ((activeBal() || {}).id || '');
+  const balChanged = !!(id && getTx(id) && getTx(id).balId && getTx(id).balId !== balId);
   let t;
   if (id) {
     t = getTx(id);
-    Object.assign(t, { customerName: name, date: $('#fDate').value || todayStr(), items });
+    Object.assign(t, { customerName: name, date: $('#fDate').value || todayStr(), items, balId });
     // re-clamp: if paid now exceeds new total, keep payments but status auto recompute
-    toast('Transaksi diperbarui', 'success');
+    toast(balChanged ? `Transaksi dipindah ke bal "${balNameOf(t)}"` : 'Transaksi diperbarui', 'success');
   } else {
-    t = { id: uid(), customerName: name, tiktokUsername: '', date: $('#fDate').value || todayStr(), items, payments: [], checkoutStatus: false, shopeeUsername: '', shopeeOrderNumber: '', checkoutDate: '', createdAt: Date.now() };
+    t = { id: uid(), customerName: name, tiktokUsername: '', date: $('#fDate').value || todayStr(), items, payments: [], checkoutStatus: false, shopeeUsername: '', shopeeOrderNumber: '', checkoutDate: '', balId, createdAt: Date.now() };
     const dpAmt = toRp($('#fDpAmount').value);
     if (dpAmt > 0) t.payments.push({ kind: dpAmt >= txTotal(t) ? 'pelunasan' : 'dp', amount: dpAmt, method: $('#fDpMethod').value || SETTINGS.defaultMethod, date: t.date, at: Date.now() });
     TRANSACTIONS.push(t);
+    const a = activeBal();
+    if (a && balId && balId !== a.id) toast(`Tersimpan di bal "${balNameOf(t)}" (bukan bal aktif "${a.name}")`, 'info');
     if (dpAmt > txTotal(t)) toast('DP melebihi harga — kelebihan ' + fmtRp(dpAmt - txTotal(t)) + '. Bisa dikoreksi lewat tombol ✏️', 'warn');
     else toast('Transaksi berhasil ditambahkan', 'success');
   }
@@ -733,6 +881,23 @@ function fillMethodSelect(sel, selected) {
   sel.innerHTML = METHOD_NAMES.map(m => `<option value="${m}" ${m === (selected || SETTINGS.defaultMethod) ? 'selected' : ''}>${m}</option>`).join('');
 }
 
+/* ---- Pilih bal buat transaksi (default bal aktif; bal lama boleh dipilih lagi) ---- */
+function fillBalSelect(sel, currentId) {
+  if (!sel) return;
+  const a = activeBal();
+  const val = currentId || (a ? a.id : '') || (BALES[0] || {}).id || '';
+  sel.innerHTML = BALES.map(b => `<option value="${b.id}"${b.id === val ? ' selected' : ''}>${esc(b.name)}${b.status === 'aktif' ? ' (aktif)' : ' (arsip)'}</option>`).join('');
+  syncBalHint();
+}
+function syncBalHint() {
+  const sel = $('#fBal'), hint = $('#fBalHint'); if (!sel || !hint) return;
+  const b = balById(sel.value), a = activeBal();
+  if (!b) { hint.innerHTML = 'Buat bal dulu (menu Bal) biar ada era modalnya.'; return; }
+  hint.innerHTML = (a && b.id === a.id)
+    ? `Bal aktif — modal ${fmtRp(b.modal)}, semua transaksi era ini masuk ke sini.`
+    : `Bal arsip — transaksi ini dicatat di sejarah "${esc(b.name)}", bukan bal aktif.`;
+}
+
 /* ---- Shopee Dagang: uang masuk lewat pesanan/checkout Shopee (bucket terpisah, langsung dihitung lunas) ---- */
 function shopeeDagangOf(t) { return (t.payments || []).filter(p => p.method === 'Shopee Dagang').reduce((x, p) => x + (p.amount || 0), 0); }
 function shopeeDagangTotal() { return TRANSACTIONS.reduce((s, t) => s + shopeeDagangOf(t), 0); }
@@ -781,7 +946,7 @@ function openDpModal(txId, idx) {
   let p = dpEditIdx != null ? (target.payments || [])[dpEditIdx] : null;
   if (dpEditIdx != null && !p) dpEditIdx = null;
   fillMethodSelect($('#dpMethod'), p ? p.method : SETTINGS.defaultMethod);
-  $('#dpCustomer').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.customerName)} — ${fmtRp(txTotal(t))} (sisa ${fmtRp(txRemaining(t))})</option>`).join('');
+  $('#dpCustomer').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.customerName)} — ${fmtRp(txTotal(t))} (sisa ${fmtRp(txRemaining(t))})${balScopeId() === 'all' || (balOf(t) || {}).id !== balScopeId() ? ' · ' + balNameOf(t) : ''}</option>`).join('');
   $('#dpCustomer').value = target.id;
   $('#dpCustomer').disabled = !!p;
   $('#dpModalTitle').textContent = p ? 'Koreksi Pembayaran' : 'Catat DP';
@@ -943,16 +1108,17 @@ function renderDP() {
   $('#dpOverview').innerHTML = [
     { k: 'Total DP Masuk', v: fmtRp(s.totalDp) },
     { k: 'Total Pelunasan', v: fmtRp(s.totalLunas) },
-    { k: 'Sudah DP', v: TRANSACTIONS.filter(t => txPaidTotal(t) > 0).length + ' trx' },
-    { k: 'Belum DP', v: TRANSACTIONS.filter(t => txPaidTotal(t) === 0).length + ' trx' },
-    { k: 'Lebih Bayar', v: TRANSACTIONS.filter(t => txOver(t) > 0).length + ' trx' },
+    { k: 'Sudah DP', v: STX().filter(t => txPaidTotal(t) > 0).length + ' trx' },
+    { k: 'Belum DP', v: STX().filter(t => txPaidTotal(t) === 0).length + ' trx' },
+    { k: 'Lebih Bayar', v: STX().filter(t => txOver(t) > 0).length + ' trx' },
+    { k: 'Kas 7 Hari', v: fmtRp(cashInDays(7)) },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
   const rows = [];
-  TRANSACTIONS.forEach(t => (t.payments || []).forEach((p, idx) => rows.push({ t, p, idx })));
+  STX().forEach(t => (t.payments || []).forEach((p, idx) => rows.push({ t, p, idx })));
   rows.sort((a, b) => (b.p.at || 0) - (a.p.at || 0));
   const pgD = slicePage(rows, 'dp');
   $('#paymentHistory').innerHTML = rows.length ? pgD.items.map(({ t, p, idx }) => `
-    <tr><td>${fmtDate(p.date)}</td><td>${esc(t.customerName)}</td>
+    <tr><td>${fmtDate(p.date)}</td><td>${esc(t.customerName)}${balTagHTML(t)}</td>
       <td><span class="badge ${p.kind === 'dp' ? 'b-blue' : 'b-green'}">${p.kind.toUpperCase()}</span></td>
       <td><strong>${fmtRp(p.amount)}</strong></td>
       <td><span class="cust-cell"><i class="fa-solid ${METHODS[p.method]?.icon || 'fa-money-bill'}" style="color:${METHODS[p.method]?.color || 'var(--muted)'}"></i> ${esc(p.method)}</span></td>
@@ -972,17 +1138,17 @@ function renderDP() {
    ========================================================= */
 const keepOpen = new Set(); // nama grup Keep yang lagi di-buka (accordion)
 function renderKeep() {
-  const s = dashboardStats();
+  const all = TRANSACTIONS; // daftar ini lintas bal — barang keep bal lama harus tetap kejar
   $('#keepStats').innerHTML = [
-    { k: 'Barang KEEP', v: s.keepItems },
-    { k: 'Barang BATAL', v: s.batalItems },
-    { k: 'DP Hangus', v: s.hangusCount + ' trx' },
-    { k: 'Uang DP Hangus', v: fmtRp(s.hangusTotal) },
+    { k: 'Barang KEEP', v: all.filter(t => !t.checkoutStatus).reduce((s, t) => s + keepCountOf(t, 'keep'), 0) },
+    { k: 'Barang BATAL', v: all.reduce((s, t) => s + keepCountOf(t, 'batal'), 0) },
+    { k: 'DP Hangus', v: all.filter(t => t.hangus).length + ' trx' },
+    { k: 'Uang DP Hangus', v: fmtRp(all.reduce((s, t) => s + (t.hangus ? (t.hangusAmount || txPaidTotal(t)) : 0), 0)) },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
   const q = ($('#keepSearch') && $('#keepSearch').value || '').toLowerCase();
   const f = ($('#keepStatusFilter') && $('#keepStatusFilter').value) || 'all';
   const map = new Map();
-  TRANSACTIONS.forEach(t => {
+  all.forEach(t => {
     if (t.checkoutStatus) return; // sudah CO = barang dikirim, bukan keep lagi
     const name = (String(t.customerName || '').trim()) || 'Tanpa Nama';
     if (q && !name.toLowerCase().includes(q)) return;
@@ -992,7 +1158,7 @@ function renderKeep() {
       if (!pass) return;
       if (!map.has(name)) map.set(name, { name, items: [], txs: new Map(), k: 0, ba: 0, gTotal: 0 });
       const g = map.get(name);
-      g.items.push({ i, idx, txId: t.id });
+      g.items.push({ i, idx, txId: t.id, balId: t.balId, bl: balNameOf(t) });
       if (!g.txs.has(t.id)) g.txs.set(t.id, t);
       if (st === 'batal') g.ba++; else { g.k++; g.gTotal += (i.price || 0); }
     });
@@ -1018,6 +1184,7 @@ function renderKeep() {
         <div class="kg-item${it.i.status === 'batal' ? ' is-batal' : ''}">
           <span class="ki-no">${n + 1}.</span>
           <span class="ki-price">${fmtRp(it.i.price)}</span>
+          ${(balScopeId() === 'all' || it.balId !== balScopeId()) ? `<span class="ki-bal" title="Barang ini ada di bal">${esc(it.bl)}</span>` : ''}
           <div class="seg seg-mini">
             <button class="${it.i.status === 'keep' ? 'on-keep' : ''}" data-item-status="keep" data-id="${it.txId}" data-idx="${it.idx}" title="Tetap keep"><i class="fa-solid fa-bookmark"></i></button>
             <button class="${it.i.status === 'batal' ? 'on-batal' : ''}" data-item-status="batal" data-id="${it.txId}" data-idx="${it.idx}" title="Batalkan barang"><i class="fa-solid fa-xmark"></i></button>
@@ -1049,7 +1216,7 @@ function renderPelunasan() {
   $('#pelunasanList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtDate(t.date)}</span></div></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtDate(t.date)}</span></div>${balTagHTML(t)}</div>
       <div class="tc-line"><span>Total</span><strong>${fmtRp(txTotal(t))}</strong></div>
       <div class="tc-line"><span>DP</span><strong>${fmtRp(txDp(t))}</strong></div>
       <div class="tc-line"><span>Sisa</span><strong class="trend-down">${fmtRp(txRemaining(t))}</strong></div>
@@ -1091,7 +1258,7 @@ function renderCheckout() {
   $('#coList').innerHTML = list.length ? pg.items.map(t => `
     <div class="tx-card">
       <div class="tc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span></div></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span></div>${balTagHTML(t)}</div>
       ${t.checkoutStatus ? `
         <div class="tc-line"><span>Akun Shopee</span><strong>${esc(t.shopeeUsername || '-')}</strong></div>
         <div class="tc-line"><span>Tanggal CO</span><strong>${fmtDate(t.checkoutDate)}</strong></div>
@@ -1107,9 +1274,9 @@ function renderCheckout() {
 /* =========================================================
    CUSTOMER AGGREGATION + DATA CUSTOMER VIEW
    ========================================================= */
-function customerAgg() {
+function customerAgg(list = TRANSACTIONS) {
   const map = new Map();
-  TRANSACTIONS.forEach(t => {
+  list.forEach(t => {
     const key = (t.customerName || 'Tanpa Nama').trim();
     if (!map.has(key)) map.set(key, { name: key, tiktok: t.tiktokUsername || '', phone: t.phone || '', orders: 0, qty: 0, value: 0, paid: 0, co: 0 });
     const c = map.get(key);
@@ -1152,7 +1319,9 @@ function lastNDays(n) {
   return out;
 }
 function renderAnalytics() {
-  const txs = TRANSACTIONS;
+  const txs = STX();
+  const b = scopeBal();
+  const bs = b ? balStats(b) : null;
   const activeTxs = txs.filter(t => !t.hangus);
   const totalValue = txs.reduce((s, t) => s + txTotal(t), 0);
   const totalDp = activeTxs.reduce((s, t) => s + txDp(t), 0);
@@ -1162,16 +1331,18 @@ function renderAnalytics() {
   const totalPcs = txs.reduce((s, t) => s + txQty(t), 0);
   const n = txs.length || 1;
   const coDone = txs.filter(t => t.checkoutStatus).length;
-  const custCount = customerAgg().length;
+  const custCount = customerAgg(txs).length;
   const dpCount = txs.filter(t => txPaidTotal(t) > 0).length;
   const lunasCount = txs.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length;
-  $('#analyticsStats').innerHTML = [
+  const rows = [
     { k: 'Total Omzet', v: fmtRp(totalValue) }, { k: 'Total DP', v: fmtRp(totalDp) },
     { k: 'Total Pelunasan', v: fmtRp(totalLunas) }, { k: 'Outstanding', v: fmtRp(outstanding) }, { k: 'Pendapatan Hangus', v: fmtRp(hangusIncome) },
     { k: 'Avg Order Value', v: fmtRp(totalValue / n) }, { k: 'Rata² Harga/Barang', v: fmtRp(totalPcs ? totalValue / totalPcs : 0) }, { k: 'Avg Item/Customer', v: (totalPcs / n).toFixed(1) },
     { k: 'Total Customer', v: custCount }, { k: 'Total Transaksi', v: txs.length },
     { k: 'Total Pcs', v: totalPcs }, { k: 'Sudah CO', v: coDone }, { k: 'Belum CO', v: txs.length - coDone },
-  ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
+  ];
+  if (b && bs) rows.push({ k: 'Modal ' + b.name, v: fmtRp(bs.modal) }, { k: 'Kas Masuk Bal Ini', v: fmtRp(bs.kas) }, { k: bs.sisaUang >= 0 ? 'Kelebihan Kas' : 'Kurang Modal', v: fmtRp(Math.abs(bs.sisaUang)) });
+  $('#analyticsStats').innerHTML = rows.map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
 
   // funnel
   $('#funnel').innerHTML = [
@@ -1182,11 +1353,11 @@ function renderAnalytics() {
   ].map(f => `<div class="fn-row"><div class="fn-top"><span>${f.k}</span><strong>${f.v} (${Math.round(f.v / f.max * 100)}%)</strong></div><div class="fn-bar"><i data-w="${Math.round(f.v / f.max * 100)}">${f.v}</i></div></div>`).join('');
   requestAnimationFrame(() => $$('#funnel .fn-bar > i').forEach(b => b.style.width = Math.max(8, +b.dataset.w) + '%'));
 
-  renderTopCustomers();
+  renderTopCustomers(txs);
   renderCharts();
 }
-function renderTopCustomers() {
-  const list = customerAgg();
+function renderTopCustomers(listSrc) {
+  const list = customerAgg(listSrc || TRANSACTIONS);
   const rankHTML = (arr, valFn, subFn) => arr.length ? arr.map((c, i) => `
     <li><div class="rk">${i + 1}</div>
       <div class="avatar" style="width:34px;height:34px;font-size:14px;border-radius:10px;background:${avatarColor(c.name)}">${esc(initials(c.name))}</div>
@@ -1207,17 +1378,18 @@ function renderCharts() {
   Chart.defaults.color = textColor();
   Chart.defaults.font.family = 'Inter, sans-serif';
   const days = lastNDays(7);
-  const dayValue = days.map(d => TRANSACTIONS.filter(t => t.date === d).reduce((s, t) => s + txTotal(t), 0));
-  const dayPcs = days.map(d => TRANSACTIONS.filter(t => t.date === d).reduce((s, t) => s + txQty(t), 0));
+  const scoped = STX();
+  const dayValue = days.map(d => scoped.filter(t => t.date === d).reduce((s, t) => s + txTotal(t), 0));
+  const dayPcs = days.map(d => scoped.filter(t => t.date === d).reduce((s, t) => s + txQty(t), 0));
   const dayLabels = days.map(d => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short' }));
   const mm = paymentByMethod();
   $('#methodTally').innerHTML = METHOD_NAMES.map(m => `<div class="mt-row${mm[m] ? '' : ' mt-zero'}"><span><i class="fa-solid ${METHODS[m].icon}" style="color:${METHODS[m].color}"></i> ${m}</span><strong>${fmtRp(mm[m])}</strong></div>`).join('');
   const st = [
-    TRANSACTIONS.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length,
-    TRANSACTIONS.filter(t => txPaidTotal(t) > 0 && !(txTotal(t) > 0 && txRemaining(t) === 0)).length,
-    TRANSACTIONS.filter(t => txPaidTotal(t) === 0).length,
+    scoped.filter(t => txTotal(t) > 0 && txRemaining(t) === 0).length,
+    scoped.filter(t => txPaidTotal(t) > 0 && !(txTotal(t) > 0 && txRemaining(t) === 0)).length,
+    scoped.filter(t => txPaidTotal(t) === 0).length,
   ];
-  const co = [TRANSACTIONS.filter(t => t.checkoutStatus).length, TRANSACTIONS.filter(t => !t.checkoutStatus && txTotal(t) > 0).length];
+  const co = [scoped.filter(t => t.checkoutStatus).length, scoped.filter(t => !t.checkoutStatus && txTotal(t) > 0).length];
   const grad = (id) => { const el = $(id); const c = el.getContext('2d'); const gr = c.createLinearGradient(0, 0, 0, 280); gr.addColorStop(0, 'rgba(168,85,247,.5)'); gr.addColorStop(1, 'rgba(236,72,153,.02)'); return gr; };
   const common = { responsive: true, plugins: { legend: { labels: { usePointStyle: true, padding: 14 } } } };
   CHARTS.daily = new Chart($('#chartDaily'), { type: 'line', data: { labels: dayLabels, datasets: [{ label: 'Penjualan', data: dayValue, borderColor: '#ec4899', backgroundColor: grad('#chartDaily'), fill: true, tension: .4, pointRadius: 4, pointBackgroundColor: '#a855f7' }] }, options: { ...common, scales: { y: { grid: { color: gridColor() } }, x: { grid: { color: gridColor() } } } } });
@@ -1239,7 +1411,7 @@ function renderLive() {
   $('#liveList').innerHTML = list.length ? pg.items.map(t => `
     <div class="live-card">
       <div class="lc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong></div></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong></div>${balTagHTML(t)}</div>
       <div class="lc-stats"><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span><span class="${txRemaining(t) > 0 ? 'trend-down' : 'trend-up'}">sisa ${fmtRp(txRemaining(t))}</span></div>
       <div class="tc-foot">${statusBadge(t)}</div>
       <div class="live-actions">
@@ -1269,6 +1441,158 @@ function markHangus(txId) {
 }
 
 /* =========================================================
+   BAL VIEW + STRIP + SWITCHER + FORM BAL BARU
+   ========================================================= */
+function renderBalSwitcher() {
+  const sel = $('#balSwitch');
+  const list = [...BALES].sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)) || (b.createdAt || 0) - (a.createdAt || 0));
+  if (sel) {
+    const cur = balScopeId();
+    sel.innerHTML = list.map(b => `<option value="${b.id}"${b.id === cur ? ' selected' : ''}>${esc(b.name)}${b.status === 'aktif' ? ' •aktif' : ' · arsip'}</option>`).join('') +
+      `<option value="all"${cur === 'all' ? ' selected' : ''}>Semua Bal (gabungan)</option>`;
+  }
+  const chip = $('#balChip');
+  if (chip) {
+    const b = scopeBal();
+    const sp = chip.querySelector('span');
+    if (sp) sp.textContent = b ? b.name : 'Semua Bal';
+    chip.classList.toggle('is-all', !b);
+    chip.title = b ? 'Bal: ' + b.name + ' · klik buat liat semua bal' : 'Lagi liat semua bal digabung · klik buat liat semua bal';
+  }
+}
+function renderBalStrip() {
+  const el = $('#balStrip'); if (!el) return;
+  const b = scopeBal();
+  if (!b) {
+    el.hidden = false;
+    const a = activeBal();
+    el.innerHTML = `<div class="bs-all"><i class="fa-solid fa-layer-group"></i> Lagi lihat <strong>semua bal digabung</strong> — angka gabungan semua era modal.
+      ${a ? `<button class="btn btn-ghost btn-small" data-act="bal-scope" data-id="${a.id}"><i class="fa-solid fa-rotate-left"></i> Balik ke bal aktif</button>` : ''}</div>`;
+    return;
+  }
+  const s = balStats(b);
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="bs-main">
+      <div class="bs-top">
+        <strong>${esc(b.name)}</strong>
+        <span class="badge ${b.status === 'aktif' ? 'b-green' : 'b-muted'}">${b.status === 'aktif' ? 'BAL AKTIF' : 'ARSIP'}</span>
+        <span class="bs-sub">mulai ${fmtDate(b.startDate)} · ${s.hari} hari${b.supplier ? ' · beli dari ' + esc(b.supplier) : ''}${b.target ? ' · target ' + fmtRp(b.target) : ''}</span>
+      </div>
+      ${s.modal ? `<div class="bs-bar" title="Uang yang masuk di bal ini dibanding modal"><i data-w="${Math.min(100, s.pctModal)}"></i><span>Kas ${fmtRp(s.kas)} · modal ${fmtRp(s.modal)} · <strong>${s.pctModal}%</strong>${s.sisaUang >= 0 ? ' — balik modal ✓' : ''}</span></div>` : ''}
+      ${b.target ? `<div class="bs-bar bs-target" title="Kas dibanding target yang lo tentuin sendiri"><i data-w="${Math.min(100, s.pctTarget)}"></i><span>Target ${fmtRp(b.target)} · ${s.pctTarget}%</span></div>` : ''}
+      <div class="bs-figs">
+        <span class="${s.sisaUang >= 0 ? 'trend-up' : 'trend-down'}"><i class="fa-solid ${s.sisaUang >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${s.sisaUang >= 0 ? 'kelebihan ' + fmtRp(s.sisaUang) : 'kurang ' + fmtRp(-s.sisaUang)}</span>
+        <span>omzet ${fmtRp(s.omzet)}</span>
+        <span>piutang <strong class="${s.piutang > 0 ? 'trend-down' : ''}">${fmtRp(s.piutang)}</strong></span>
+        <span>${s.n} trx · ${s.pcs} pcs · ${s.keepItems} masih di-keep</span>
+        <span title="Semua pembayaran (lintas bal) yang masuk 7 hari terakhir — cek duit beneran di tangan">kas 7 hari ${fmtRp(cashInDays(7))}</span>
+      </div>
+      ${!s.modal ? `<div class="bs-figs"><span class="hint-sm">Modal bal belum diisi — <button type="button" class="link-btn" data-act="bal-edit" data-id="${b.id}">isi modalnya</button> biar keliatan udah balik modal apa belum.</span></div>` : ''}
+    </div>
+    <div class="bs-side">
+      <button class="btn btn-ghost btn-small" data-action="goto-bal"><i class="fa-solid fa-table-list"></i> Semua Bal</button>
+      <button class="btn btn-primary btn-small" data-action="new-bal"><i class="fa-solid fa-plus"></i> Mulai Bal Baru</button>
+    </div>`;
+  requestAnimationFrame(() => $$('#balStrip .bs-bar > i').forEach(el => el.style.width = (+el.dataset.w || 0) + '%'));
+}
+function renderBales() {
+  const cur = balScopeId();
+  const list = [...BALES].sort((a, b) => (a.status === 'aktif' ? 0 : 1) - (b.status === 'aktif' ? 0 : 1) || String(b.startDate).localeCompare(String(a.startDate)));
+  const tot = BALES.map(balStats);
+  $('#balSummary').innerHTML = [
+    { k: 'Jumlah Bal', v: BALES.length + ' bal' },
+    { k: 'Total Modal', v: fmtRp(BALES.reduce((s, b) => s + (b.modal || 0), 0)) },
+    { k: 'Total Kas Masuk', v: fmtRp(tot.reduce((s, x) => s + x.kas, 0)) },
+    { k: 'Total Omzet', v: fmtRp(tot.reduce((s, x) => s + x.omzet, 0)) },
+    { k: 'Piutang Belum Bayar', v: fmtRp(tot.reduce((s, x) => s + x.piutang, 0)) },
+    { k: 'Kas 7 Hari Terakhir', v: fmtRp(cashInDays(7)) },
+  ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
+  $('#balCards').innerHTML = list.length ? list.map(b => {
+    const s = balStats(b), isScope = cur === b.id;
+    return `
+    <div class="bal-card${b.status === 'aktif' ? ' is-aktif' : ''}${isScope ? ' is-scope' : ''}">
+      <div class="bc-head" data-act="bal-scope" data-id="${b.id}" title="Klik: tampilkan isi bal ini di seluruh app">
+        <div class="bc-title"><strong>${esc(b.name)}</strong>
+          ${b.status === 'aktif' ? '<span class="badge b-green">AKTIF</span>' : '<span class="badge b-muted">ARSIP</span>'}
+          ${isScope ? '<span class="badge b-blue">LAGI DILIAT</span>' : ''}
+        </div>
+        <span class="bc-sub">${fmtDate(b.startDate)}${b.supplier ? ' · ' + esc(b.supplier) : ''} · ${s.n} trx · ${s.pcs} pcs · ${s.hari} hari</span>
+        <div class="bc-pct">${s.modal ? s.pctModal + '%' : '—'}</div>
+      </div>
+      <div class="bc-bar">${s.modal ? `<i data-w="${Math.min(100, s.pctModal)}"></i>` : ''}</div>
+      <div class="bc-figs">
+        <div><span>Modal</span><strong>${fmtRp(s.modal)}</strong></div>
+        <div><span>Kas masuk</span><strong>${fmtRp(s.kas)}</strong></div>
+        <div><span>Omzet</span><strong>${fmtRp(s.omzet)}</strong></div>
+        <div><span>Piutang</span><strong class="${s.piutang > 0 ? 'trend-down' : ''}">${fmtRp(s.piutang)}</strong></div>
+        <div><span>Sisa kas vs modal</span><strong class="${s.sisaUang >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.sisaUang)}</strong></div>
+        <div><span>Rata² / transaksi</span><strong>${fmtRp(s.aov)}</strong></div>
+        <div><span>Shopee Dagang</span><strong>${fmtRp(s.dagang)}</strong></div>
+        <div><span>Hangus ditahan</span><strong>${fmtRp(s.hangus)}</strong></div>
+        <div><span>CO</span><strong>${s.coDone}/${s.n}</strong></div>
+        <div><span>Masih di-keep</span><strong>${s.keepItems} pcs</strong></div>
+      </div>
+      <div class="bc-actions">
+        <button class="btn btn-ghost btn-small" data-act="bal-view" data-id="${b.id}"><i class="fa-solid fa-receipt"></i> Transaksinya</button>
+        ${b.status === 'aktif' ? '' : `<button class="btn btn-ghost btn-small" data-act="bal-activate" data-id="${b.id}"><i class="fa-solid fa-toggle-on"></i> Jadikan Bal Aktif</button>`}
+        <button class="btn btn-ghost btn-small" data-act="bal-edit" data-id="${b.id}"><i class="fa-solid fa-pen"></i> Edit modal / nama</button>
+        ${b.status === 'aktif' ? `<button class="btn btn-ghost btn-small" data-act="bal-close" data-id="${b.id}"><i class="fa-solid fa-box-archive"></i> Tutup Bal</button>` : ''}
+      </div>
+    </div>`;
+  }).join('') : '<div class="bal-empty">Belum ada bal. Klik <strong>Mulai Bal Baru</strong> di atas.</div>';
+  requestAnimationFrame(() => $$('#balCards .bc-bar > i').forEach(el => el.style.width = (+el.dataset.w || 0) + '%'));
+  $('#balCompare').innerHTML = BALES.length > 1 ? `<table class="tbl"><thead><tr><th>Bal</th><th>Mulai</th><th>Modal</th><th>Kas</th><th>Omzet</th><th>Sisa Kas</th><th>Piutang</th><th>Trx</th><th>Pcs</th><th>Rata²/Trx</th><th>Rata²/Pcs</th></tr></thead><tbody>` +
+    list.map(b => { const s = balStats(b); return `<tr><td><strong>${esc(b.name)}</strong>${b.status === 'aktif' ? ' <span class="badge b-green">AKTIF</span>' : ''}</td><td>${fmtDate(b.startDate)}</td><td>${fmtRp(s.modal)}</td><td>${fmtRp(s.kas)}</td><td>${fmtRp(s.omzet)}</td><td class="${s.sisaUang >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.sisaUang)}</td><td>${fmtRp(s.piutang)}</td><td>${s.n}</td><td>${s.pcs}</td><td>${fmtRp(s.aov)}</td><td>${fmtRp(s.pcs ? s.omzet / s.pcs : 0)}</td></tr>`; }).join('') +
+    '</tbody></table>' : '<p class="hint">Punya minimal 2 bal buat lihat perbandingan antar era modal di sini.</p>';
+}
+function openBalModal(id) {
+  const b = id ? balById(id) : null;
+  $('#balForm').reset();
+  $('#balId').value = b ? b.id : '';
+  $('#balModalTitle').textContent = b ? 'Edit Bal' : 'Mulai Bal Baru';
+  $('#saveBal').innerHTML = b ? '<i class="fa-solid fa-floppy-disk"></i> Simpan' : '<i class="fa-solid fa-plus"></i> Mulai Bal Ini';
+  if (b) {
+    $('#bName').value = b.name || '';
+    $('#bSupplier').value = b.supplier || '';
+    $('#bStart').value = b.startDate || todayStr();
+    $('#bModal').value = fmtK(b.modal);
+    $('#bTarget').value = b.target ? fmtK(b.target) : '';
+    $('#balHint').innerHTML = `Nama & modal yang diubah langsung kepake di semua perhitungan bal ini (${balStats(b).n} transaksi terkait).`;
+  } else {
+    $('#bStart').value = todayStr();
+    const a = activeBal(), s = a ? balStats(a) : null;
+    $('#balHint').innerHTML = a
+      ? `Bal <strong>${esc(a.name)}</strong> otomatis jadi arsip${s.piutang > 0 ? ` — piutang ${fmtRp(s.piutang)} di bal itu tetap ada & tetap bisa ditagih` : ''}. Dashboard & analytics mulai ngitung dari nol lagi, data bal lama gak kehapus.`
+      : 'Isi modal total (udah termasuk ongkir, kemasan, dll). Transaksi setelah ini otomatis masuk bal baru.';
+  }
+  openModal('#modalBal');
+  setTimeout(() => { const n = $('#bName'); if (n) n.focus(); }, 60);
+}
+function saveBal() {
+  const name = $('#bName').value.trim();
+  if (!name) return toast('Nama bal wajib diisi', 'error');
+  const modalVal = $('#bModal').value;
+  if (modalVal === '' || toRp(modalVal) <= 0) return toast('Isi modal bal dulu (ribu). Mis. 6000 = Rp6.000.000', 'error');
+  const data = { name, supplier: $('#bSupplier').value.trim(), startDate: $('#bStart').value || todayStr(), modal: toRp(modalVal), target: toRp($('#bTarget').value) };
+  const id = $('#balId').value;
+  if (id) {
+    const b = balById(id); if (!b) return toast('Bal tidak ditemukan', 'error');
+    Object.assign(b, data);
+    saveBales(); closeModal('#modalBal'); resetAllPages(); renderAll();
+    toast('Bal "' + b.name + '" diperbarui', 'success');
+    return;
+  }
+  BALES.forEach(x => { if (x.status === 'aktif') { x.status = 'selesai'; x.closedAt = x.closedAt || todayStr(); } });
+  const b = makeBal(Object.assign({}, data, { status: 'aktif' }));
+  BALES.push(b);
+  SETTINGS.balScope = b.id;
+  saveBales(); saveSettings(); closeModal('#modalBal'); resetAllPages();
+  go('dashboard');
+  toast('Bal "' + b.name + '" dimulai — modal ' + fmtRp(b.modal) + ', angka mulai dari nol', 'success');
+}
+
+/* =========================================================
    SETTINGS + DATA I/O
    ========================================================= */
 function renderSettings() {
@@ -1282,21 +1606,22 @@ function download(filename, text, type) {
   setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 function exportCSV() {
-  const head = ['Tanggal', 'Customer', 'TikTok', 'JumlahBarang', 'Total', 'DP', 'Pelunasan', 'Sisa', 'StatusDP', 'StatusCO', 'Shopee', 'NoPesanan'];
+  const head = ['Tanggal', 'Bal', 'Customer', 'TikTok', 'JumlahBarang', 'Total', 'DP', 'Pelunasan', 'Sisa', 'StatusDP', 'StatusCO', 'Shopee', 'NoPesanan'];
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const lines = [head.map(q).join(',')];
-  TRANSACTIONS.forEach(t => lines.push([t.date, t.customerName, t.tiktokUsername, txQty(t), txTotal(t), txDp(t), txLunas(t), txRemaining(t), txPaidStatus(t), t.checkoutStatus ? 'SUDAH CO' : 'BELUM CO', t.shopeeUsername, t.shopeeOrderNumber].map(q).join(',')));
+  TRANSACTIONS.forEach(t => lines.push([t.date, balNameOf(t), t.customerName, t.tiktokUsername, txQty(t), txTotal(t), txDp(t), txLunas(t), txRemaining(t), txPaidStatus(t), t.checkoutStatus ? 'SUDAH CO' : 'BELUM CO', t.shopeeUsername, t.shopeeOrderNumber].map(q).join(',')));
   download('pakein-tracker-' + todayStr() + '.csv', '\ufeff' + lines.join('\n'), 'text/csv;charset=utf-8');
   toast('Export CSV berhasil', 'success');
 }
 function exportJSON() { download('pakein-tracker-' + todayStr() + '.json', JSON.stringify(TRANSACTIONS, null, 2), 'application/json'); toast('Export JSON berhasil', 'success'); }
-function backup() { const data = { app: 'PAKEIN TRACKER', version: 1, exportedAt: new Date().toISOString(), transactions: TRANSACTIONS, settings: SETTINGS }; download('pakein-backup-' + todayStr() + '.json', JSON.stringify(data, null, 2), 'application/json'); toast('Backup berhasil diunduh', 'success'); }
+function backup() { const data = { app: 'PAKEIN TRACKER', version: 2, exportedAt: new Date().toISOString(), transactions: TRANSACTIONS, bales: BALES, settings: SETTINGS }; download('pakein-backup-' + todayStr() + '.json', JSON.stringify(data, null, 2), 'application/json'); toast('Backup berhasil diunduh', 'success'); }
 function normalizeTx(t) {
-  return { id: t.id || uid(), customerName: t.customerName || 'Tanpa Nama', tiktokUsername: t.tiktokUsername || '', date: t.date || todayStr(), items: (t.items || []).map(i => ({ price: i.price || 0, status: i.status === 'final' ? 'keep' : (i.status || 'keep') })), payments: t.payments || [], checkoutStatus: !!t.checkoutStatus, shopeeUsername: t.shopeeUsername || '', shopeeOrderNumber: t.shopeeOrderNumber || '', checkoutDate: t.checkoutDate || '', hangus: !!t.hangus, hangusAmount: t.hangusAmount || 0, createdAt: t.createdAt || Date.now() };
+  return { id: t.id || uid(), customerName: t.customerName || 'Tanpa Nama', tiktokUsername: t.tiktokUsername || '', phone: t.phone || '', date: t.date || todayStr(), items: (t.items || []).map(i => ({ price: i.price || 0, status: i.status === 'final' ? 'keep' : (i.status || 'keep') })), payments: t.payments || [], checkoutStatus: !!t.checkoutStatus, shopeeUsername: t.shopeeUsername || '', shopeeReceiver: t.shopeeReceiver || '', shopeeOrderNumber: t.shopeeOrderNumber || '', checkoutDate: t.checkoutDate || '', balId: t.balId || '', hangus: !!t.hangus, hangusAmount: t.hangusAmount || 0, createdAt: t.createdAt || Date.now() };
 }
 function ingestTransactions(arr) {
   if (!Array.isArray(arr) || !arr.length) { toast('File tidak valid / kosong', 'error'); return; }
   TRANSACTIONS = arr.map(normalizeTx);
+  healBalIds();
   saveTx(); renderAll(); toast(`${TRANSACTIONS.length} transaksi berhasil dimuat`, 'success');
 }
 function readFileJSON(input, cb) {
@@ -1313,11 +1638,13 @@ function restoreFrom(data) {
   if (Array.isArray(data)) return ingestTransactions(data);
   if (data && Array.isArray(data.transactions)) {
     TRANSACTIONS = data.transactions.map(normalizeTx);
+    if (Array.isArray(data.bales) && data.bales.length) { BALES = data.bales.map(normalizeBal); writeLocalBales(); }
     if (data.settings) { SETTINGS = Object.assign(SETTINGS, data.settings); saveSettings(); }
+    healBalIds();
     saveTx(); renderAll(); toast('Restore data berhasil', 'success');
   } else toast('Format backup tidak dikenali', 'error');
 }
-function loadDemo() { demoData(); saveTx(); SETTINGS.onboarded = true; saveSettings(); renderAll(); toast('Demo data dimuat ✨', 'success'); }
+function loadDemo() { demoData(); saveTx(); SETTINGS.onboarded = true; SETTINGS.balScope = (activeBal() || {}).id || ''; saveSettings(); resetAllPages(); renderAll(); toast('Demo data dimuat ✨ (2 bal: 1 arsip + 1 aktif)', 'success'); }
 function clearAll() {
   confirmDialog('Hapus Semua Data', 'Semua transaksi akan dihapus permanen. Yakin lanjutkan?', 'Hapus Semua', () => {
     TRANSACTIONS = []; saveTx(); renderAll(); toast('Semua data dihapus', 'warn');
@@ -1328,6 +1655,10 @@ function clearAll() {
 function demoData() {
   const t = todayStr();
   const dd = (n) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() - n); return isoDate(d); };
+  const bLama = makeBal({ name: 'Kuning', supplier: 'gudang Cihurip', startDate: dd(9), modal: 450000, status: 'selesai', closedAt: dd(4) });
+  const bBaru = makeBal({ name: 'TSC', supplier: 'si A', startDate: dd(3), modal: 600000, target: 750000 });
+  BALES = [bLama, bBaru];
+  const cut = dd(4);
   const mk = (name, tt, date, items, payments, co) => {
     const its = items.map(i => ({ price: i.price, status: i.status === 'final' ? 'keep' : i.status }));
     const tr = normalizeTx({ customerName: name, tiktokUsername: tt, date, items: its, payments, createdAt: new Date(date + 'T12:00:00').getTime() });
@@ -1388,6 +1719,8 @@ function demoData() {
       { price: 110000, status: 'final' }],
       [P('pelunasan', 110000, 'DANA')], { shopee: '@yogastore', no: '2409Y1', date: dd(8) }),
   ];
+  TRANSACTIONS.forEach(x => { x.balId = String(x.date) >= cut ? bBaru.id : bLama.id; });
+  writeLocalBales();
 }
 
 /* =========================================================
@@ -1403,6 +1736,8 @@ function handleAction(action, el) {
     case 'add-dp': openDpModal(id); break;
     case 'add-pay': openDpModal(id); break;
     case 'goto-checkout': go('checkout'); break;
+    case 'goto-bal': go('bal'); break;
+    case 'new-bal': openBalModal(); break;
     case 'co-filter': { const val = el.dataset.val; const sel = $('#coFilter'); sel.value = (sel.value === val) ? 'all' : val; resetPage('co'); renderCheckout(); break; }
     case 'goto-pelunasan': go('pelunasan'); break;
     case 'export-csv': exportCSV(); break;
@@ -1431,6 +1766,11 @@ function handleAct(act, el) {
     case 'edit-pay': openDpModal(id, +el.dataset.idx); break;
     case 'del-pay': deletePayment(id, +el.dataset.idx); break;
     case 'co-pick': { $('#coShopee').value = el.dataset.shopee || ''; if (el.dataset.receiver) $('#coReceiver').value = el.dataset.receiver; $$('#coShopeePicks .co-pick').forEach(b => b.classList.toggle('on', b.dataset.shopee === el.dataset.shopee)); break; }
+    case 'bal-scope': setBalScope(el.dataset.id); break;
+    case 'bal-view': setBalScope(el.dataset.id); go('transaksi'); break;
+    case 'bal-edit': openBalModal(el.dataset.id); break;
+    case 'bal-activate': activateBal(el.dataset.id); break;
+    case 'bal-close': closeBal(el.dataset.id); break;
     case 'live-keep': liveSetAll(id, 'keep'); break;
     case 'live-cancel': confirmDialog('Batalkan Transaksi', `Batalkan semua barang untuk ${getTx(id)?.customerName || ''}?`, 'Batalkan', () => liveSetAll(id, 'batal')); break;
     case 'hangus': markHangus(id); break;
@@ -1465,6 +1805,11 @@ function wireEvents() {
   $('#itemsWrap').addEventListener('change', e => { if (e.target.classList.contains('item-status')) recomputeFormTotals(); });
   $('#itemsWrap').addEventListener('click', e => { const rm = e.target.closest('.rm'); if (rm) { rm.closest('.item-row').remove(); recomputeFormTotals(); if (!$$('#itemsWrap .item-row').length) addItemRow(); } });
   $('#saveTx').addEventListener('click', saveTxFromForm);
+  $('#fBal').addEventListener('change', syncBalHint);
+
+  // bal switcher + form bal
+  $('#balSwitch').addEventListener('change', e => setBalScope(e.target.value));
+  $('#saveBal').addEventListener('click', saveBal);
 
   // DP modal
   $('#dpCustomer').addEventListener('change', syncDpPreview);

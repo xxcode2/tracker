@@ -28,14 +28,16 @@ export default async function handler(req, res) {
       const j = await r.json();
       const rec = j.record;
       let transactions = [];
+      let bales = [];
       let updatedAt = 0;
       if (Array.isArray(rec)) {
         transactions = rec; // bin lama: langsung array transaksi
       } else if (rec && typeof rec === 'object') {
         transactions = Array.isArray(rec.transactions) ? rec.transactions : [];
+        bales = Array.isArray(rec.bales) ? rec.bales : [];
         updatedAt = rec.updatedAt || 0;
       }
-      res.status(200).json({ updatedAt, transactions });
+      res.status(200).json({ updatedAt, transactions, bales });
       return;
     }
 
