@@ -231,6 +231,7 @@ function makeBal(o = {}) {
     supplier: String(o.supplier || '').trim(),
     startDate: o.startDate || todayStr(),
     modal: Math.max(0, +o.modal || 0),      // rupiah (input dalam ribu), sudah termasuk ongkir/kemasan
+    pcsBeli: Math.max(0, Math.round(+o.pcsBeli || 0)), // jumlah barang isi bal -> buat hitung HPP per barang
     target: Math.max(0, +o.target || 0),    // rupiah; 0 = gak pakai target
     status: o.status === 'selesai' ? 'selesai' : 'aktif',
     closedAt: o.closedAt || '',
@@ -321,11 +322,20 @@ function balStats(b) {
   const hangus = txs.reduce((s, t) => s + (t.hangus ? (t.hangusAmount != null ? t.hangusAmount : txPaidTotal(t)) : 0), 0);
   const kas = dp + lunas + hangus;
   const piutang = txs.reduce((s, t) => s + txRemaining(t), 0);
+  /* HPP: modal dibagi jumlah barang isi bal. Dibanding harga jual per barang => margin & laba kotor. */
+  const pcsBeli = Math.max(0, Math.round((b && b.pcsBeli) || 0));
+  const perPcs = pcs ? omzet / pcs : 0;
+  const hppPcs = pcsBeli ? modal / pcsBeli : 0;
+  const hppJual = hppPcs * pcs;
+  const laba = omzet - hppJual;
+  const sisaPcs = Math.max(0, pcsBeli - pcs);
   return {
     bal: b, txs, n: txs.length, omzet, pcs, dp, lunas, hangus, kas, piutang, modal, target,
     cust: names.length, baru: names.length - repeat, repeat,
     pctRepeat: names.length ? Math.round(repeat / names.length * 100) : 0,
-    perPcs: pcs ? omzet / pcs : 0, kasPerHari: kas / hari,
+    perPcs, kasPerHari: kas / hari,
+    pcsBeli, hppPcs, hppJual, laba, marginPcs: hppPcs ? perPcs - hppPcs : 0,
+    marginPct: omzet ? laba / omzet * 100 : 0, sisaPcs, nilaiSisa: hppPcs * sisaPcs,
     dagang: txs.reduce((s, t) => s + shopeeDagangOf(t), 0),
     keepItems: txs.reduce((s, t) => s + (t.checkoutStatus ? 0 : keepCountOf(t, 'keep')), 0),
     coDone: txs.filter(t => t.checkoutStatus).length,
@@ -460,13 +470,13 @@ function closeSidebar() { $('#sidebar').classList.remove('open'); document.body.
 /* =========================================================
    COUNTER ANIMATION
    ========================================================= */
-function animateCount(el, target, { money = false, suffix = '' } = {}) {
+function animateCount(el, target, { money = false, suffix = '', signed = false } = {}) {
   const dur = 900, start = performance.now();
   function frame(now) {
     const p = Math.min(1, (now - start) / dur);
     const eased = 1 - Math.pow(1 - p, 3);
     const val = target * eased;
-    el.textContent = money ? fmtRp(val) : (Math.round(val).toLocaleString('id-ID') + suffix);
+    el.textContent = money ? (signed ? fmtSigned(val) : fmtRp(val)) : (Math.round(val).toLocaleString('id-ID') + suffix);
     if (p < 1) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -519,6 +529,11 @@ function renderDashboard() {
         ? { label: 'Kelebihan Kas', value: s.sisaUang, money: true, sub: 'bisa jadi modal bal berikutnya', icon: 'fa-arrow-trend-up', bg: 'linear-gradient(135deg,#14b8a6,#3b82f6)', cls: 'trend-up' }
         : { label: 'Kurang Modal', value: -s.sisaUang, money: true, sub: 'kas belum nutup modal bal ini', icon: 'fa-arrow-trend-down', bg: 'linear-gradient(135deg,#ef4444,#b91c1c)', cls: 'trend-down' },
     );
+    if (s.pcsBeli) cards.push({
+      label: 'Laba Kotor ' + b.name, value: s.laba, money: true, signed: true,
+      sub: `HPP ${fmtRp(s.hppPcs)} vs jual ${fmtRp(s.perPcs)}/pcs · ${Math.round(s.marginPct)}% · ${s.sisaPcs} pcs sisa`,
+      icon: 'fa-percent', bg: 'linear-gradient(135deg,#f59e0b,#a855f7)', cls: s.laba >= 0 ? 'trend-up' : 'trend-down',
+    });
   }
   grid.innerHTML = cards.map((c, i) => `
     <div class="stat-card">
@@ -531,7 +546,7 @@ function renderDashboard() {
     </div>`).join('');
   $$('.stat-value', grid).forEach((el, i) => {
     const c = cards[i];
-    animateCount(el, c.value, { money: c.money, suffix: c.suffix || '' });
+    animateCount(el, c.value, { money: c.money, suffix: c.suffix || '', signed: c.signed });
   });
 
   renderDailyReport();
@@ -941,7 +956,7 @@ function syncBalHint() {
   const b = balById(sel.value), a = activeBal();
   if (!b) { hint.innerHTML = 'Buat bal dulu (menu Bal) biar ada era modalnya.'; return; }
   hint.innerHTML = (a && b.id === a.id)
-    ? `Bal aktif — modal ${fmtRp(b.modal)}, semua transaksi era ini masuk ke sini.`
+    ? `Bal aktif — modal ${fmtRp(b.modal)}${b.pcsBeli ? ` · HPP ${fmtRp(b.modal / b.pcsBeli)}/barang (${b.pcsBeli} pcs)` : ''}, semua transaksi era ini masuk ke sini.`
     : `Bal arsip — transaksi ini dicatat di sejarah "${esc(b.name)}", bukan bal aktif.`;
 }
 
@@ -1405,6 +1420,10 @@ function renderAnalytics() {
   ];
   if (b && bs) rows.push({ k: 'Modal ' + b.name, v: fmtRp(bs.modal) }, { k: 'Kas Masuk Bal Ini', v: fmtRp(bs.kas) }, { k: bs.sisaUang >= 0 ? 'Kelebihan Kas' : 'Kurang Modal', v: fmtRp(Math.abs(bs.sisaUang)) },
     { k: 'Customer Bal ' + b.name, v: bs.cust }, { k: 'Balik dari Bal Lama', v: `${bs.repeat} (${bs.pctRepeat}%)` }, { k: 'Customer Baru', v: bs.baru }, { k: 'Kas / Hari', v: fmtRp(bs.kasPerHari) });
+  if (b && bs && bs.pcsBeli) rows.push(
+    { k: 'Barang Isi Bal', v: bs.pcsBeli + ' pcs' }, { k: 'HPP / Barang', v: fmtRp(bs.hppPcs) }, { k: 'Harga Jual / Barang', v: fmtRp(bs.perPcs) },
+    { k: 'Margin / Barang', v: fmtSigned(bs.marginPcs) + ' (' + Math.round(bs.marginPct) + '%)' }, { k: 'Laba Kotor', v: fmtSigned(bs.laba) },
+    { k: 'Barang Sisa', v: bs.sisaPcs + ' pcs (' + fmtRp(bs.nilaiSisa) + ')' });
   $('#analyticsStats').innerHTML = rows.map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong></div>`).join('');
 
   // funnel
@@ -1552,6 +1571,8 @@ function renderBalStrip() {
         <span>${s.n} trx · ${s.pcs} pcs · ${s.keepItems} masih di-keep</span>
         <span title="Customer unik di bal ini + yang udah pernah beli di bal sebelumnya">${s.cust} customer · <strong>${s.repeat} balik lagi</strong> (${s.pctRepeat}%) · ${s.baru} baru</span>
         <span title="Kas yang masuk dibagi umur bal — buat ngira-ngira kecepatan muter modal">${fmtRp(s.kasPerHari)}/hari</span>
+        ${s.pcsBeli ? `<span title="HPP per barang = modal ÷ jumlah barang isi bal, dibanding rata-rata harga jual per barang">HPP ${fmtRp(s.hppPcs)} → jual ${fmtRp(s.perPcs)}/pcs · margin <strong class="${s.marginPcs >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.marginPcs)}</strong> (${Math.round(s.marginPct)}%)</span>
+        <span title="Barang yang belum kejual dari isi bal — modalnya masih numpuk di baju">${s.sisaPcs} pcs sisa · ±${fmtRp(s.nilaiSisa)}</span>` : ''}
         <span title="Semua pembayaran (lintas bal) yang masuk 7 hari terakhir — cek duit beneran di tangan, bukan kas bal ini aja">kas masuk 7 hari terakhir (semua bal) ${fmtRp(cashInDays(7))}</span>
       </div>
       ${!s.modal ? `<div class="bs-figs"><span class="hint-sm">Modal bal belum diisi — <button type="button" class="link-btn" data-act="bal-edit" data-id="${b.id}">isi modalnya</button> biar keliatan udah balik modal apa belum.</span></div>` : ''}
@@ -1569,6 +1590,9 @@ function renderBales() {
   const allCust = customerAgg();
   const lintas = allCust.filter(c => c.balCount > 1).length;
   const a = activeBal(), as = a ? balStats(a) : null;
+  const totSisa = tot.reduce((s, x) => s + x.sisaPcs, 0);
+  const totNilaiSisa = tot.reduce((s, x) => s + x.nilaiSisa, 0);
+  const totLaba = tot.reduce((s, x) => s + (x.pcsBeli ? x.laba : 0), 0);
   $('#balSummary').innerHTML = [
     { k: 'Jumlah Bal', v: BALES.length + ' bal' },
     { k: 'Total Modal', v: fmtRp(BALES.reduce((s, b) => s + (b.modal || 0), 0)) },
@@ -1578,6 +1602,8 @@ function renderBales() {
     { k: 'Kas 7 Hari Terakhir', v: fmtRp(cashInDays(7)) },
     { k: 'Customer Balik Bal', v: lintas + ' / ' + allCust.length, sub: 'udah pernah beli di lebih dari 1 bal' },
     { k: 'Repeat Rate Bal Aktif', v: as ? as.pctRepeat + '%' : '—', sub: a && as ? `${as.repeat} dari ${as.cust} customer di ${a.name}` : 'belum ada bal aktif' },
+    { k: 'Barang Belum Kejual', v: totSisa ? totSisa + ' pcs' : '—', sub: totSisa ? `modal masih numpuk di baju ±${fmtRp(totNilaiSisa)}` : 'isi jumlah barang tiap bal dulu' },
+    { k: 'Laba Kotor (omzet - HPP)', v: tot.some(x => x.pcsBeli) ? fmtSigned(totLaba) : '—', sub: 'gabungan semua bal yang diisi jumlah barang' },
   ].map(x => `<div class="mini"><span>${x.k}</span><strong>${x.v}</strong>${x.sub ? `<em>${x.sub}</em>` : ''}</div>`).join('');
   $('#balCards').innerHTML = list.length ? list.map(b => {
     const s = balStats(b), isScope = cur === b.id;
@@ -1603,6 +1629,13 @@ function renderBales() {
         <div><span>Hangus ditahan</span><strong>${fmtRp(s.hangus)}</strong></div>
         <div><span>CO</span><strong>${s.coDone}/${s.n}</strong></div>
         <div><span>Masih di-keep</span><strong>${s.keepItems} pcs</strong></div>
+        ${s.pcsBeli ? `
+        <div><span>Barang isi bal</span><strong>${s.pcsBeli} pcs <small>${s.sisaPcs} sisa</small></strong></div>
+        <div><span>HPP / barang</span><strong>${fmtRp(s.hppPcs)}</strong></div>
+        <div><span>Harga jual / barang</span><strong>${fmtRp(s.perPcs)}</strong></div>
+        <div><span>Margin / barang</span><strong class="${s.marginPcs >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.marginPcs)} <small>${Math.round(s.marginPct)}%</small></strong></div>
+        <div><span>Laba kotor</span><strong class="${s.laba >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.laba)}</strong></div>
+        <div><span>Modal masih di stok</span><strong>${fmtRp(s.nilaiSisa)}</strong></div>` : `<div class="bc-wide"><span>HPP / barang belum kehitung</span><strong><button type="button" class="link-btn" data-act="bal-edit" data-id="${b.id}">isi jumlah barang bal ini</button></strong></div>`}
         <div><span>Customer</span><strong>${s.cust} <small>${s.baru} baru</small></strong></div>
         <div><span>Balik dari bal lama</span><strong>${s.repeat} <small>(${s.pctRepeat}%)</small></strong></div>
         <div><span>Kas / hari</span><strong>${fmtRp(s.kasPerHari)}</strong></div>
@@ -1619,6 +1652,12 @@ function renderBales() {
   $('#balCompare').innerHTML = BALES.length > 1 ? `<table class="tbl"><thead><tr><th>Bal</th><th>Mulai</th><th>Modal</th><th>Kas</th><th>Omzet</th><th>Sisa Kas</th><th>Piutang</th><th>Trx</th><th>Pcs</th><th>Customer</th><th>Balik Lagi</th><th>Rata²/Trx</th><th>Rata²/Pcs</th><th>Umur</th><th>Kas/Hari</th></tr></thead><tbody>` +
     list.map(b => { const s = balStats(b); return `<tr><td><strong>${esc(b.name)}</strong>${b.status === 'aktif' ? ' <span class="badge b-green">AKTIF</span>' : ''}</td><td>${fmtDate(b.startDate)}</td><td>${fmtRp(s.modal)}</td><td>${fmtRp(s.kas)}</td><td>${fmtRp(s.omzet)}</td><td class="${s.sisaUang >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.sisaUang)}</td><td>${fmtRp(s.piutang)}</td><td>${s.n}</td><td>${s.pcs}</td><td>${s.cust}</td><td class="${s.repeat ? 'trend-up' : ''}">${s.repeat} (${s.pctRepeat}%)</td><td>${fmtRp(s.aov)}</td><td>${fmtRp(s.perPcs)}</td><td>${s.hari} h</td><td>${fmtRp(s.kasPerHari)}</td></tr>`; }).join('') +
     '</tbody></table>' : '<p class="hint">Punya minimal 2 bal buat lihat perbandingan antar era modal di sini.</p>';
+  /* HPP & margin per barang — modal dibagi jumlah barang isi bal, dibanding harga jual */
+  const withHpp = list.filter(b => ((b.pcsBeli || 0) > 0));
+  const hppEl = $('#balHpp');
+  if (hppEl) hppEl.innerHTML = withHpp.length ? `<table class="tbl"><thead><tr><th>Bal</th><th>Modal</th><th>Barang Isi Bal</th><th>HPP/Barang</th><th>Kejual</th><th>Harga Jual/Barang</th><th>Margin/Barang</th><th>Margin</th><th>Laba Kotor</th><th>Sisa</th><th>Modal di Stok</th></tr></thead><tbody>` +
+    list.map(b => { const s = balStats(b); return `<tr><td><strong>${esc(b.name)}</strong>${b.status === 'aktif' ? ' <span class="badge b-green">AKTIF</span>' : ''}</td><td>${fmtRp(s.modal)}</td><td>${s.pcsBeli || '—'}</td><td>${s.pcsBeli ? fmtRp(s.hppPcs) : '—'}</td><td>${s.pcs} pcs</td><td>${s.pcs ? fmtRp(s.perPcs) : '—'}</td><td class="${s.pcsBeli ? (s.marginPcs >= 0 ? 'trend-up' : 'trend-down') : ''}">${s.pcsBeli ? fmtSigned(s.marginPcs) : '—'}</td><td>${s.pcsBeli ? Math.round(s.marginPct) + '%' : '—'}</td><td class="${s.pcsBeli ? (s.laba >= 0 ? 'trend-up' : 'trend-down') : ''}">${s.pcsBeli ? fmtSigned(s.laba) : '—'}</td><td>${s.pcsBeli ? s.sisaPcs + ' pcs' : '—'}</td><td>${s.pcsBeli ? fmtRp(s.nilaiSisa) : '—'}</td></tr>`; }).join('') +
+    '</tbody></table>' + (withHpp.length < list.length ? `<p class="hint">${list.length - withHpp.length} bal belum diisi jumlah barangnya, jadi HPP-nya belum kehitung.</p>` : '') + (() => { const over = list.filter(b => { const s = balStats(b); return s.pcsBeli > 0 && s.pcs > s.pcsBeli; }); return over.length ? `<p class="hint trend-down"><i class="fa-solid fa-triangle-exclamation"></i> Bal ${over.map(b => esc(b.name)).join(', ')} punya barang kejual lebih banyak dari jumlah barang isi bal — HPP-nya jadi kemurahan. Cek lagi angka <strong>Jumlah Barang Isi Bal</strong> di bal itu.</p>` : ''; })() : '<p class="hint">Isi <strong>Jumlah Barang Isi Bal</strong> di tiap bal (tombol Edit modal / nama) buat lihat HPP & margin per barang di sini. Mis. modal Rp6.000.000 isi 350 pcs → HPP Rp17.143/barang.</p>';
 }
 function openBalModal(id) {
   const b = id ? balById(id) : null;
@@ -1631,24 +1670,41 @@ function openBalModal(id) {
     $('#bSupplier').value = b.supplier || '';
     $('#bStart').value = b.startDate || todayStr();
     $('#bModal').value = fmtK(b.modal);
+    $('#bPcs').value = b.pcsBeli || '';
     $('#bTarget').value = b.target ? fmtK(b.target) : '';
-    $('#balHint').innerHTML = `Nama & modal yang diubah langsung kepake di semua perhitungan bal ini (${balStats(b).n} transaksi terkait).`;
+    $('#balHint').dataset.base = `Nama, modal & jumlah barang yang diubah langsung kepake di semua perhitungan bal ini (${balStats(b).n} transaksi terkait).`;
   } else {
     $('#bStart').value = todayStr();
     const a = activeBal(), s = a ? balStats(a) : null;
-    $('#balHint').innerHTML = a
+    $('#balHint').dataset.base = a
       ? `Bal <strong>${esc(a.name)}</strong> otomatis jadi arsip${s.piutang > 0 ? ` — piutang ${fmtRp(s.piutang)} di bal itu tetap ada & tetap bisa ditagih` : ''}. Dashboard & analytics mulai ngitung dari nol lagi, data bal lama gak kehapus.`
-      : 'Isi modal total (udah termasuk ongkir, kemasan, dll). Transaksi setelah ini otomatis masuk bal baru.';
+      : 'Isi modal total (udah termasuk ongkir, kemasan, dll) + jumlah barang isi bal. Transaksi setelah ini otomatis masuk bal baru.';
   }
+  syncBalHppHint();
   openModal('#modalBal');
   setTimeout(() => { const n = $('#bName'); if (n) n.focus(); }, 60);
+}
+/* Preview HPP per barang langsung pas ngetik modal / jumlah barang */
+function syncBalHppHint() {
+  const hint = $('#balHint'); if (!hint) return;
+  const modal = toRp($('#bModal').value), pcsBeli = Math.max(0, Math.round(+$('#bPcs').value || 0));
+  const id = $('#balId').value, b = id ? balById(id) : null, s = b ? balStats(b) : null;
+  let extra = '';
+  if (modal > 0 && pcsBeli > 0) {
+    const per = modal / pcsBeli;
+    extra = `<br><strong>HPP ${fmtRp(per)} / barang</strong> (${fmtRp(modal)} ÷ ${pcsBeli} pcs)` +
+      (s && s.pcs ? ` · rata² jual di bal ini ${fmtRp(s.perPcs)}/barang → margin <strong class="${s.perPcs - per >= 0 ? 'trend-up' : 'trend-down'}">${fmtSigned(s.perPcs - per)}</strong>/barang.` : ' · belum ada transaksi di bal ini, jadi marginnya belum bisa dibanding.');
+  } else if (modal > 0) {
+    extra = '<br><span class="hint-sm">Isi jumlah barang juga biar HPP per barang kehitung (modal ÷ jumlah barang).</span>';
+  }
+  hint.innerHTML = (hint.dataset.base || '') + extra;
 }
 function saveBal() {
   const name = $('#bName').value.trim();
   if (!name) return toast('Nama bal wajib diisi', 'error');
   const modalVal = $('#bModal').value;
   if (modalVal === '' || toRp(modalVal) <= 0) return toast('Isi modal bal dulu (ribu). Mis. 6000 = Rp6.000.000', 'error');
-  const data = { name, supplier: $('#bSupplier').value.trim(), startDate: $('#bStart').value || todayStr(), modal: toRp(modalVal), target: toRp($('#bTarget').value) };
+  const data = { name, supplier: $('#bSupplier').value.trim(), startDate: $('#bStart').value || todayStr(), modal: toRp(modalVal), pcsBeli: Math.max(0, Math.round(+$('#bPcs').value || 0)), target: toRp($('#bTarget').value) };
   const id = $('#balId').value;
   if (id) {
     const b = balById(id); if (!b) return toast('Bal tidak ditemukan', 'error');
@@ -1691,13 +1747,13 @@ function exportJSON() { download('pakein-tracker-' + todayStr() + '.json', JSON.
 /* Rekap satu baris per bal — buat nyari bal mana yang paling cepet muter modal */
 function exportBalCSV() {
   if (!BALES.length) return toast('Belum ada bal', 'warn');
-  const head = ['Bal', 'Status', 'Supplier', 'Mulai', 'Selesai', 'UmurHari', 'Modal', 'Target', 'Kas', 'PctModal', 'Omzet', 'Piutang', 'SisaKasVsModal', 'Transaksi', 'Pcs', 'Customer', 'CustomerBaru', 'BalikLagi', 'PctBalikLagi', 'RataRataPerTrx', 'RataRataPerPcs', 'KasPerHari', 'ShopeeDagang', 'HangusDitahan', 'SudahCO', 'MasihKeep'];
+  const head = ['Bal', 'Status', 'Supplier', 'Mulai', 'Selesai', 'UmurHari', 'Modal', 'Target', 'Kas', 'PctModal', 'Omzet', 'Piutang', 'SisaKasVsModal', 'Transaksi', 'Pcs', 'Customer', 'CustomerBaru', 'BalikLagi', 'PctBalikLagi', 'RataRataPerTrx', 'RataRataPerPcs', 'KasPerHari', 'ShopeeDagang', 'HangusDitahan', 'SudahCO', 'MasihKeep', 'BarangIsiBal', 'HPPPerBarang', 'MarginPerBarang', 'PctMargin', 'LabaKotor', 'BarangSisa', 'NilaiBarangSisa'];
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const list = [...BALES].sort((a, b) => (a.status === 'aktif' ? 0 : 1) - (b.status === 'aktif' ? 0 : 1) || String(b.startDate).localeCompare(String(a.startDate))); // urutan sama kayak kartu di layar
   const lines = [head.map(q).join(',')];
   list.forEach(b => {
     const s = balStats(b);
-    lines.push([b.name, b.status, b.supplier, b.startDate, b.closedAt, s.hari, s.modal, s.target, s.kas, s.pctModal, s.omzet, s.piutang, s.sisaUang, s.n, s.pcs, s.cust, s.baru, s.repeat, s.pctRepeat, Math.round(s.aov), Math.round(s.perPcs), Math.round(s.kasPerHari), s.dagang, s.hangus, s.coDone, s.keepItems].map(q).join(','));
+    lines.push([b.name, b.status, b.supplier, b.startDate, b.closedAt, s.hari, s.modal, s.target, s.kas, s.pctModal, s.omzet, s.piutang, s.sisaUang, s.n, s.pcs, s.cust, s.baru, s.repeat, s.pctRepeat, Math.round(s.aov), Math.round(s.perPcs), Math.round(s.kasPerHari), s.dagang, s.hangus, s.coDone, s.keepItems, s.pcsBeli, Math.round(s.hppPcs), Math.round(s.marginPcs), Math.round(s.marginPct), Math.round(s.laba), s.sisaPcs, Math.round(s.nilaiSisa)].map(q).join(','));
   });
   download('pakein-rekap-bal-' + todayStr() + '.csv', '\ufeff' + lines.join('\n'), 'text/csv;charset=utf-8');
   toast('Rekap antar bal diekspor ✓', 'success');
@@ -1743,8 +1799,8 @@ function clearAll() {
 function demoData() {
   const t = todayStr();
   const dd = (n) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() - n); return isoDate(d); };
-  const bLama = makeBal({ name: 'Kuning', supplier: 'gudang Cihurip', startDate: dd(9), modal: 450000, status: 'selesai', closedAt: dd(4) });
-  const bBaru = makeBal({ name: 'TSC', supplier: 'si A', startDate: dd(3), modal: 600000, target: 750000 });
+  const bLama = makeBal({ name: 'Kuning', supplier: 'gudang Cihurip', startDate: dd(9), modal: 450000, pcsBeli: 35, status: 'selesai', closedAt: dd(4) });
+  const bBaru = makeBal({ name: 'TSC', supplier: 'si A', startDate: dd(3), modal: 600000, pcsBeli: 45, target: 750000 });
   BALES = [bLama, bBaru];
   const cut = dd(4);
   const mk = (name, tt, date, items, payments, co) => {
@@ -1904,6 +1960,7 @@ function wireEvents() {
   // bal switcher + form bal
   $('#balSwitch').addEventListener('change', e => setBalScope(e.target.value));
   $('#saveBal').addEventListener('click', saveBal);
+  ['#bModal', '#bPcs'].forEach(sel => { const el = $(sel); if (el) el.addEventListener('input', syncBalHppHint); });
 
   // DP modal
   $('#dpCustomer').addEventListener('change', syncDpPreview);

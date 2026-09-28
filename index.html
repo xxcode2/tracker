@@ -266,12 +266,16 @@
               <button class="btn btn-primary" data-action="new-bal"><i class="fa-solid fa-plus"></i> Mulai Bal Baru</button>
             </div>
           </div>
-          <p class="hint">Satu bal = satu babak modal. Lo sendiri yang buka bal baru pas uang yang masuk udah cukup buat kulakan lagi — angka dashboard mulai nol, tapi bal lama tetap utuh sebagai arsip. Klik kartu bal buat nampilin isi bal itu di seluruh app.</p>
+          <p class="hint">Satu bal = satu babak modal. Lo sendiri yang buka bal baru pas uang yang masuk udah cukup buat kulakan lagi — angka dashboard mulai nol, tapi bal lama tetap utuh sebagai arsip. Klik kartu bal buat nampilin isi bal itu di seluruh app. Isi juga <strong>jumlah barang isi bal</strong> biar HPP per barang, margin &amp; laba kotor kehitung.</p>
           <div class="mini-grid" id="balSummary"><!-- injected --></div>
           <div class="bal-cards" id="balCards"><!-- injected --></div>
           <div class="panel">
             <div class="panel-head"><h3><i class="fa-solid fa-code-compare"></i> Perbandingan Antar Bal</h3></div>
-            <div class="table-wrap" id="balCompare"><!-- injected --></div>
+            <div class="table-wrap bal-table" id="balCompare"><!-- injected --></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3><i class="fa-solid fa-tags"></i> HPP &amp; Margin per Barang</h3></div>
+            <div class="table-wrap bal-table" id="balHpp"><!-- injected --></div>
           </div>
         </section>
 
@@ -403,7 +407,8 @@
           <div class="field"><label>Beli Dari (opsional)</label><input id="bSupplier" placeholder="si A / gudang Cihurip" autocomplete="off" /></div>
           <div class="field"><label>Tanggal Mulai Bal *</label><input type="date" id="bStart" /></div>
           <div class="field"><label>Modal Bal (ribu) *</label><input id="bModal" type="number" min="0" step="1" placeholder="6000" /><span class="hint-sm">Satu angka total, udah termasuk ongkir / kemasan / dll. 6000 = Rp6.000.000.</span></div>
-          <div class="field field-full"><label>Target Kas (ribu, opsional)</label><input id="bTarget" type="number" min="0" step="1" placeholder="7500" /><span class="hint-sm">Isi kalau lo mau lihat progress bar terhadap target. Kosongkan kalau cuma mau lihat jalan.</span></div>
+          <div class="field"><label>Jumlah Barang Isi Bal (pcs)</label><input id="bPcs" type="number" min="0" step="1" placeholder="350" /><span class="hint-sm">Buat hitung HPP per barang = modal ÷ jumlah barang. Mis. modal 6.000 (Rp6jt) isi 350 pcs → HPP Rp17.143/barang.</span></div>
+          <div class="field"><label>Target Kas (ribu, opsional)</label><input id="bTarget" type="number" min="0" step="1" placeholder="7500" /><span class="hint-sm">Isi kalau lo mau lihat progress bar terhadap target. Kosongkan kalau cuma mau lihat jalan.</span></div>
           <div class="field field-full"><span class="hint-sm" id="balHint"></span></div>
         </form>
       </div>
