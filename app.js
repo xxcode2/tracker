@@ -26,6 +26,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function todayStr() { const d = new Date(); return isoDate(d); }
+function shiftDateStr(n) { const d = new Date(); d.setDate(d.getDate() + n); return isoDate(d); }
 function isoDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function initials(name) { const p = String(name || '?').trim().split(/\s+/); return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '?'; }
 function avatarColor(name) {
@@ -839,6 +840,7 @@ function saveTxFromForm() {
     const dpAmt = toRp($('#fDpAmount').value);
     if (dpAmt > 0) t.payments.push({ kind: dpAmt >= txTotal(t) ? 'pelunasan' : 'dp', amount: dpAmt, method: $('#fDpMethod').value || SETTINGS.defaultMethod, date: t.date, at: Date.now() });
     TRANSACTIONS.push(t);
+    revealInLive(t); // baru dicat: langsung di paling atas daftar live
     const a = activeBal();
     if (a && balId && balId !== a.id) toast(`Tersimpan di bal "${balNameOf(t)}" (bukan bal aktif "${a.name}")`, 'info');
     if (dpAmt > txTotal(t)) toast('DP melebihi harga — kelebihan ' + fmtRp(dpAmt - txTotal(t)) + '. Bisa dikoreksi lewat tombol ✏️', 'warn');
@@ -1485,17 +1487,58 @@ function renderCharts() {
 /* =========================================================
    LIVE MODE
    ========================================================= */
+/* Pas live yang dibutuhin transaksi barusan, bukan aduk-aduk yang lama.
+   Default: hari ini + urutan terbaru, filter tanggal bisa diubah lewat chip. */
+const LIVE_STATE = { range: 'today', date: '', sort: 'new' };
+const LIVE_NEW_MS = 10 * 60 * 1000; // masih dianggap "BARU" 10 menit pertama
+function liveFilterTx(t) {
+  if (LIVE_STATE.date) return String(t.date || '') === LIVE_STATE.date;
+  if (LIVE_STATE.range === 'today') return String(t.date || '') === todayStr();
+  if (LIVE_STATE.range === 'yesterday') return String(t.date || '') === shiftDateStr(-1);
+  return true;
+}
+function liveDayLabel() {
+  if (LIVE_STATE.date) return fmtDate(LIVE_STATE.date);
+  return LIVE_STATE.range === 'today' ? 'hari ini' : LIVE_STATE.range === 'yesterday' ? 'kemarin' : 'semua tanggal';
+}
+/* Nandain transaksi yang barusan dicat (10 menit pertama). Usia negatif = data cloud/demo, anggep bukan baru. */
+function isFreshTx(t) { const age = Date.now() - (t.createdAt || 0); return age >= 0 && age < LIVE_NEW_MS; }
+/* Transaksi baru harus langsung keliatan — kalau filter lagi ngasih tanggal lain, geser filternya */
+function revealInLive(t) {
+  if (!t) return;
+  if (!liveFilterTx(t)) { LIVE_STATE.range = 'all'; LIVE_STATE.date = ''; }
+  LIVE_STATE.sort = 'new';
+  resetPage('live');
+}
 function renderLive() {
   const q = ($('#liveSearch').value || '').toLowerCase();
-  let list = TRANSACTIONS.filter(t => txTotal(t) > 0 && !(t.checkoutStatus));
+  const all = TRANSACTIONS.filter(t => txTotal(t) > 0 && !t.checkoutStatus);
+  let list = all.filter(liveFilterTx);
+  const nTanggal = list.length; // sebelum kena pencarian, biar hitungan "di luar tanggal" gak ngaco
   if (q) list = list.filter(t => t.customerName.toLowerCase().includes(q));
-  list.sort((a, b) => txRemaining(b) - txRemaining(a));
+  const byNew = (a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0);
+  list.sort(LIVE_STATE.sort === 'sisa' ? (a, b) => txRemaining(b) - txRemaining(a) || byNew(a, b) : byNew);
+  const onRange = LIVE_STATE.date ? '' : LIVE_STATE.range;
+  $$('#liveFilters [data-action="live-range"]').forEach(b => b.classList.toggle('is-on', b.dataset.val === onRange));
+  $$('#liveFilters [data-action="live-sort"]').forEach(b => b.classList.toggle('is-on', b.dataset.val === LIVE_STATE.sort));
+  const dEl = $('#liveDate'); if (dEl && dEl.value !== LIVE_STATE.date) dEl.value = LIVE_STATE.date;
+  const sumEl = $('#liveSum');
+  if (sumEl) {
+    const pcs = list.reduce((s, t) => s + txQty(t), 0), sisa = list.reduce((s, t) => s + txRemaining(t), 0);
+    const nNew = list.filter(isFreshTx).length;
+    sumEl.innerHTML = `<span class="ls-when"><i class="fa-regular fa-calendar"></i> ${liveDayLabel()}</span>` +
+      `<span><strong>${list.length}</strong> belum CO</span><span>${pcs} pcs · sisa ${fmtRp(sisa)}</span>` +
+      (nNew ? `<span class="ls-new"><i class="fa-solid fa-bolt"></i> ${nNew} baru masuk</span>` : '') +
+      (!q && all.length > nTanggal ? `<span class="ls-out">${all.length - nTanggal} transaksi aktif lain di luar tanggal ini</span>` : '');
+  }
   const pg = slicePage(list, 'live');
-  $('#liveList').innerHTML = list.length ? pg.items.map(t => `
-    <div class="live-card">
+  $('#liveList').innerHTML = list.length ? pg.items.map(t => {
+    const isNew = isFreshTx(t);
+    return `
+    <div class="live-card${isNew ? ' is-new' : ''}">
       <div class="lc-head"><div class="avatar" style="background:${avatarColor(t.customerName)}">${esc(initials(t.customerName))}</div>
-        <div class="tc-meta"><strong>${esc(t.customerName)}</strong></div>${balTagHTML(t)}</div>
-      <div class="lc-stats"><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span><span class="${txRemaining(t) > 0 ? 'trend-down' : 'trend-up'}">sisa ${fmtRp(txRemaining(t))}</span></div>
+        <div class="tc-meta"><strong>${esc(t.customerName)}</strong>${isNew ? '<span class="lc-new">BARU</span>' : ''}</div>${balTagHTML(t)}</div>
+      <div class="lc-stats"><span>${txQty(t)} pcs · ${fmtRp(txTotal(t))}</span><span class="${txRemaining(t) > 0 ? 'trend-down' : 'trend-up'}">sisa ${fmtRp(txRemaining(t))}</span><span class="lc-ago">${relTime(t.createdAt)}</span></div>
       <div class="tc-foot">${statusBadge(t)}</div>
       <div class="live-actions">
         <button class="la-add" data-act="edit" data-id="${t.id}"><i class="fa-solid fa-plus"></i>BARANG</button>
@@ -1506,7 +1549,12 @@ function renderLive() {
         <button class="la-co" data-act="co" data-id="${t.id}"><i class="fa-solid fa-bag-shopping"></i>CO</button>
         ${txPaidTotal(t) > 0 ? `<button class="la-hangus" data-act="hangus" data-id="${t.id}"><i class="fa-solid fa-fire"></i>HANGUS</button>` : ''}
       </div>
-    </div>`).join('') + pagerHTML('live', pg.page, pg.pages, pg.total) : emptyState('Semua transaksi selesai 🎉', 'Tidak ada transaksi aktif yang belum checkout.');
+    </div>`; }).join('') + pagerHTML('live', pg.page, pg.pages, pg.total)
+    : (q || all.length ? `<div class="empty" style="grid-column:1/-1"><div class="e-ico"><i class="fa-regular fa-calendar"></i></div>
+        <h4>${q ? 'Gak ketemu di ' + liveDayLabel() : 'Belum ada transaksi ' + liveDayLabel()}</h4>
+        <p>${q ? 'Coba cek lagi nama-nya atau ganti filter tanggal.' : 'Daftar di atas cuma ' + liveDayLabel() + '. Transaksi aktif di tanggal lain masih ada ' + (all.length ? '(' + all.length + ')' : '') + '.'}</p>
+        ${q ? '<button class="btn btn-ghost" data-action="live-clear-search"><i class="fa-solid fa-xmark"></i> Bersihin Nama</button>' : (all.length > list.length ? '<button class="btn btn-ghost" data-action="live-range" data-val="all"><i class="fa-solid fa-list"></i> Lihat Semua Tanggal</button>' : '')}</div>`
+      : emptyState('Semua transaksi selesai 🎉', 'Tidak ada transaksi aktif yang belum checkout.'));
 }
 function liveSetAll(txId, status) {
   const t = getTx(txId); if (!t) return;
@@ -1888,6 +1936,9 @@ function handleAction(action, el) {
     case 'goto-bal': go('bal'); break;
     case 'new-bal': openBalModal(); break;
     case 'co-filter': { const val = el.dataset.val; const sel = $('#coFilter'); sel.value = (sel.value === val) ? 'all' : val; resetPage('co'); renderCheckout(); break; }
+    case 'live-range': { LIVE_STATE.date = ''; LIVE_STATE.range = el.dataset.val; const di = $('#liveDate'); if (di) di.value = ''; resetPage('live'); renderLive(); break; }
+    case 'live-sort': { LIVE_STATE.sort = el.dataset.val; resetPage('live'); renderLive(); break; }
+    case 'live-clear-search': { const s = $('#liveSearch'); if (s) s.value = ''; resetPage('live'); renderLive(); break; }
     case 'goto-pelunasan': go('pelunasan'); break;
     case 'export-csv': exportCSV(); break;
     case 'export-bal': exportBalCSV(); break;
@@ -1981,6 +2032,7 @@ function wireEvents() {
   $('#txTo').addEventListener('change', () => { resetPage('tx'); renderTransactions(); });
   $('#custSearch').addEventListener('input', () => { resetPage('cust'); renderCustomers(); });
   $('#liveSearch').addEventListener('input', () => { resetPage('live'); renderLive(); });
+  $('#liveDate').addEventListener('change', e => { LIVE_STATE.date = e.target.value || ''; resetPage('live'); renderLive(); });
   $('#keepSearch').addEventListener('input', () => { resetPage('keep'); renderKeep(); });
   $('#keepStatusFilter').addEventListener('change', () => { resetPage('keep'); renderKeep(); });
   $('#coSearch').addEventListener('input', () => { resetPage('co'); renderCheckout(); });

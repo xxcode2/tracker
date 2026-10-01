@@ -285,9 +285,22 @@
             <h2><span class="live-dot"></span> Live Selling Mode</h2>
             <button class="btn btn-primary" data-action="add-tx"><i class="fa-solid fa-bolt"></i> Transaksi Cepat</button>
           </div>
-          <p class="hint">Mode cepat saat live. Ketik nama untuk menyaring, lalu gunakan tombol aksi. Prioritas: kecepatan.</p>
+          <p class="hint">Mode cepat saat live. Default yang tampil cuma <strong>transaksi hari ini</strong> dan yang terbaru paling atas — jadi transaksi barusan langsung keliatan. Pakai chip tanggal kalau mau ngaduk yang lama, atau cari nama buat nyaring.</p>
           <div class="toolbar"><div class="search"><i class="fa-solid fa-magnifying-glass"></i>
             <input id="liveSearch" type="text" placeholder="Cari nama customer aktif..." /></div></div>
+          <div class="live-filters" id="liveFilters">
+            <div class="lf-group"><span class="lf-label">Tanggal</span>
+              <button type="button" class="lf-chip is-on" data-action="live-range" data-val="today">Hari Ini</button>
+              <button type="button" class="lf-chip" data-action="live-range" data-val="yesterday">Kemarin</button>
+              <button type="button" class="lf-chip" data-action="live-range" data-val="all">Semua</button>
+              <input type="date" id="liveDate" class="lf-date" title="Atau pilih tanggal tertentu" />
+            </div>
+            <div class="lf-group"><span class="lf-label">Urut</span>
+              <button type="button" class="lf-chip is-on" data-action="live-sort" data-val="new">Terbaru</button>
+              <button type="button" class="lf-chip" data-action="live-sort" data-val="sisa">Sisa Terbesar</button>
+            </div>
+          </div>
+          <div class="live-sum" id="liveSum"></div>
           <div class="live-grid" id="liveList"></div>
         </section>
 
